@@ -702,8 +702,7 @@ function renderGroup(gid, tab) {
 /* ─── 노래 듣기 ─── */
 function renderListen() {
   const music = Data.items.filter(i => state.listenKinds.has(i.kind) && i.playable);
-  const q = state.search.trim().toLowerCase();
-  const shown = q ? music.filter(i => (i.title + ' ' + memberNames(i).join(' ')).toLowerCase().includes(q)) : music;
+  const shown = searchSongs(music);
   const favs = music.filter(i => Favs.has(i.id));
   view.innerHTML = `
     <header class="page-h"><span class="big">${esc(t('listen.big'))}</span><span class="ko">${esc(t('listen.ko'))}</span><p>${esc(t('listen.desc'))}</p></header>
@@ -737,18 +736,22 @@ function renderListen() {
     <section>
       <input class="search" id="songSearch" placeholder="${esc(t('listen.search'))}" value="${esc(state.search)}" aria-label="${esc(t('listen.search'))}">
       ${SongStore.count() ? `<p class="saved-note">${esc(t('listen.saved', { n: SongStore.count(), mb: Math.round(SongStore.bytes() / 1e6) }))} <button type="button" class="chip-btn" data-clearsongs>${esc(t('listen.clear'))}</button></p>` : ''}
-      ${shown.length ? songList(shown, t('listen.ko')) : emptyBox(esc(t('list.empty', { kind: t('stars.music') })), 'cover', [])}
+      <div id="songResults">${songResults(shown)}</div>
     </section>`;
+  // 검색 칸은 그대로 두고 결과만 바꾼다 — 칸을 다시 그리면 한글 조합이 끊겨 ㅎㅏㄴ 처럼 쳐진다
   const inp = $('#songSearch');
   inp.addEventListener('input', () => {
     state.search = inp.value;
-    const pos = inp.selectionStart;
-    renderListen();
-    ensureFoot();
-    const again = $('#songSearch');
-    again.focus();
-    again.setSelectionRange(pos, pos);
+    $('#songResults').innerHTML = songResults(searchSongs(music));
   });
+}
+function searchSongs(music) {
+  const q = state.search.trim().toLowerCase().replace(/\s+/g, '');
+  if (!q) return music;
+  return music.filter(i => (i.title + memberNames(i).join('') + (i.members.map(id => Data.member(id)?.fullName || '').join(''))).toLowerCase().replace(/\s+/g, '').includes(q));
+}
+function songResults(shown) {
+  return shown.length ? songList(shown, t('listen.ko')) : emptyBox(esc(t('list.empty', { kind: t('stars.music') })), 'cover', []);
 }
 
 /* ─── 별표 · 캘린더 ─── */
