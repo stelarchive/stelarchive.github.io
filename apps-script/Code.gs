@@ -294,7 +294,7 @@ function verify_(token) {
   const cache = CacheService.getScriptCache();
   const key = 'tok_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token));
   const hit = cache.get(key);
-  if (hit) return JSON.parse(hit);
+  if (hit) { const u = JSON.parse(hit); u.admin = isAdmin_(u); return u; } // 관리자 목록은 매번 새로 본다 (추가한 사람이 바로 되게)
   const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token), { muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) throw new Error('로그인이 만료됐다. 다시 로그인하자');
   const info = JSON.parse(res.getContentText());

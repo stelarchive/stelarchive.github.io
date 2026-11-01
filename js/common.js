@@ -332,7 +332,7 @@ const Auth = {
 
   init() {
     const saved = store.get('auth');
-    if (saved && saved.exp * 1000 > Date.now() + 60e3) { this.user = saved; }
+    if (saved && saved.exp * 1000 > Date.now() + 60e3) { this.user = saved; setTimeout(() => this.checkAdmin(), 0); }
     else store.del('auth');
     if (!CFG.googleClientId) { this.emit(); return; }
     const s = document.createElement('script');
@@ -366,10 +366,15 @@ const Auth = {
     this.waiters = [];
     this.schedule();
     this.emit();
-    // 관리자면 남이 올린 것도 고치고 지울 수 있게 표시해 둔다
-    if (LIVE) api('whoami').then(r => {
-      if (!r.user?.admin || this.user?.email !== p.email) return;
-      this.user.admin = true;
+    this.checkAdmin();
+  },
+  // 관리자면 남이 올린 것도 고치고 지울 수 있게 표시해 둔다 (들어올 때마다 서버에 다시 물어본다)
+  checkAdmin() {
+    if (!LIVE || !this.user) return;
+    const email = this.user.email;
+    api('whoami').then(r => {
+      if (this.user?.email !== email || !!r.user?.admin === !!this.user.admin) return;
+      this.user.admin = !!r.user?.admin;
       store.set('auth', this.user);
       this.emit();
     }).catch(() => {});
