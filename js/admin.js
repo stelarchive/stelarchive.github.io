@@ -69,7 +69,7 @@ function route() {
   const tab = location.hash.slice(1) || 'site';
   $$('#admTabs a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + tab));
   pane.onclick = pane.oninput = pane.onchange = null;
-  ({ site: paneSite, groups: paneGroups, members: paneMembers, events: paneEvents, texts: paneTexts, colors: paneColors, about: paneAbout, content: paneContent }[tab] || paneSite)();
+  ({ site: paneSite, groups: paneGroups, members: paneMembers, events: paneEvents, texts: paneTexts, colors: paneColors, about: paneAbout, content: paneContent, attend: paneAttend }[tab] || paneSite)();
 }
 addEventListener('hashchange', route);
 
@@ -304,6 +304,51 @@ function paneEvents() {
     const del = e.target.closest('[data-edel]');
     if (del && confirm('이 일정 지울까?')) { draft.events.splice(+del.dataset.edel, 1); markDirty(); route(); }
   };
+}
+
+/* ─── 출석 ─── 구글 계정마다 며칠 출석했는지 (관리자만) */
+let attRows = null, attSort = 'days', attQ = '';
+async function paneAttend() {
+  pane.innerHTML = `<div class="editor"><div class="row">
+      <h2 style="margin-right:auto">출석 <small class="muted" id="attCount"></small></h2>
+      <input id="aq" placeholder="이름 · 이메일" value="${esc(attQ)}" style="padding:10px 12px;background:var(--bg);border:1px solid var(--line2);min-width:220px">
+      <select id="asort" style="padding:10px 12px;background:var(--bg);border:1px solid var(--line2)">
+        <option value="days" ${attSort === 'days' ? 'selected' : ''}>출석 많은 순</option>
+        <option value="last" ${attSort === 'last' ? 'selected' : ''}>최근 출석 순</option>
+        <option value="streak" ${attSort === 'streak' ? 'selected' : ''}>연속 출석 순</option>
+      </select>
+      ${LIVE ? '<button class="btn sm" id="areload">새로 읽기</button>' : ''}
+    </div>
+    <p class="muted sm">로그인한 사람이 캘린더에서 「오늘 출석하기」를 누른 기록이다. 날짜는 한국 시간 기준.</p>
+    <div id="arows"><p class="muted">불러오는 중…</p></div></div>`;
+  const paint = () => {
+    const box = $('#arows');
+    if (!box) return;
+    if (!attRows) return;
+    const q = attQ.toLowerCase().replace(/\s+/g, '');
+    const rows = attRows.filter(r => !q || (r.name + r.email).toLowerCase().replace(/\s+/g, '').includes(q))
+      .sort((a, b) => attSort === 'last' ? (b.last > a.last ? 1 : -1) : (b[attSort] - a[attSort]) || (b.last > a.last ? 1 : -1));
+    $('#attCount').textContent = `${attRows.length}명 · 오늘 ${attRows.filter(r => r.today).length}명`;
+    box.innerHTML = rows.length ? `<div style="overflow-x:auto"><table class="ctable">
+      <tr><th>#</th><th>이름</th><th>구글 계정</th><th>출석</th><th>연속</th><th>마지막 출석</th><th>처음 출석</th></tr>
+      ${rows.map((r, i) => `<tr><td class="muted">${i + 1}</td><td>${esc(r.name)}</td><td class="muted">${esc(r.email)}</td>
+        <td><b>${r.days}</b>일</td><td>${r.streak ? r.streak + '일' : '-'}</td><td>${esc(r.last)}${r.today ? ' <small style="color:#d64552">오늘</small>' : ''}</td><td class="muted">${esc(r.first)}</td></tr>`).join('')}
+    </table></div>` : `<p class="muted" style="text-align:center;padding:40px 0">${attRows.length ? '찾는 사람이 없다' : '아직 출석한 사람이 없다'}</p>`;
+  };
+  $('#aq').oninput = e => { attQ = e.target.value; paint(); };
+  $('#asort').onchange = e => { attSort = e.target.value; paint(); };
+  const load = async () => {
+    try {
+      if (LIVE) attRows = (await api('attendanceAll')).people;
+      else {
+        const all = store.get('demoAttend', {}), today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+        attRows = Object.entries(all).map(([email, ds]) => { ds = [...ds].sort(); return { email, name: email.split('@')[0], days: ds.length, first: ds[0], last: ds[ds.length - 1], today: ds.includes(today), streak: 0 }; });
+      }
+    } catch (e) { $('#arows').innerHTML = `<p>${esc(e.message)}</p>`; return; }
+    paint();
+  };
+  if ($('#areload')) $('#areload').onclick = () => { attRows = null; $('#arows').innerHTML = '<p class="muted">불러오는 중…</p>'; load(); };
+  if (attRows) paint(); else load();
 }
 
 /* ─── 올라온 것 ─── */

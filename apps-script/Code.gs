@@ -212,6 +212,27 @@ const ACTIONS = {
     return { dates: dates, today: today };
   },
   getAttendance(b, u) { return { dates: attDates_(attSheet_(), u.email), today: kstToday_() }; },
+  // 관리자: 계정마다 출석 일수 · 연속 · 처음/마지막 출석
+  attendanceAll(b, u) {
+    needAdmin_(u);
+    const today = kstToday_(), by = {};
+    attSheet_().getDataRange().getValues().slice(1).forEach(r => {
+      if (!r[0]) return;
+      const d = r[2] instanceof Date ? Utilities.formatDate(r[2], 'Asia/Seoul', 'yyyy-MM-dd') : String(r[2]);
+      const p = by[r[0]] || (by[r[0]] = { email: r[0], name: r[1] || r[0], dates: {} });
+      p.name = r[1] || p.name;
+      p.dates[d] = 1;
+    });
+    const dayStr = t => Utilities.formatDate(new Date(t), 'UTC', 'yyyy-MM-dd');
+    const people = Object.keys(by).map(k => {
+      const p = by[k], ds = Object.keys(p.dates).sort();
+      let n = 0, t = new Date(today + 'T00:00:00Z').getTime();
+      if (!p.dates[today]) t -= 864e5;
+      while (p.dates[dayStr(t)]) { n++; t -= 864e5; }
+      return { email: p.email, name: p.name, days: ds.length, first: ds[0], last: ds[ds.length - 1], today: !!p.dates[today], streak: n };
+    });
+    return { people: people, today: today };
+  },
 
   // 댓글: 구글 로그인한 사람만. 500자까지
   addComment(b, u) {
