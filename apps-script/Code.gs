@@ -13,6 +13,7 @@ const ADMIN_EMAILS = [
   '33_43@kbs.hs.kr',
   '33_26@kbs.hs.kr',
   '34_61@kbs.hs.kr',
+  '32_50@kbs.hs.kr',
   // 'friend@gmail.com',   ← 관리자를 늘리려면 이렇게 한 줄씩
 ];
 
