@@ -179,6 +179,29 @@ const ACTIONS = {
     return {};
   },
 
+  // 내 일정: 본인만 보는 개인 일정
+  getMyEvents(b, u) {
+    const sh = mySheet_();
+    return { events: sh.getRange('B:B').createTextFinder(u.email).matchEntireCell(true).findAll().map(r => myRow_(sh.getRange(r.getRow(), 1, 1, 5).getValues()[0])) };
+  },
+  addMyEvent(b, u) {
+    const date = String(b.date || '');
+    const title = String(b.title || '').trim().slice(0, 100);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !title) throw new Error('날짜와 내용을 넣자');
+    const color = /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : '#7c6cf0';
+    const row = ['my_' + Utilities.getUuid().slice(0, 12), u.email, date, title, color];
+    mySheet_().appendRow(row);
+    return { event: myRow_(row) };
+  },
+  removeMyEvent(b, u) {
+    const sh = mySheet_();
+    const hit = sh.getRange('A:A').createTextFinder(String(b.id || '')).matchEntireCell(true).findNext();
+    if (!hit) return {};
+    if (sh.getRange(hit.getRow(), 2).getValue() !== u.email) throw new Error('내 일정만 지울 수 있다');
+    sh.deleteRow(hit.getRow());
+    return {};
+  },
+
   // 출석: 하루 한 번 (한국 날짜 기준)
   checkIn(b, u) {
     const today = kstToday_();
@@ -660,4 +683,13 @@ function attDates_(sh, email) {
     const v = sh.getRange(r.getRow(), 3).getValue();
     return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd') : String(v);
   });
+}
+
+/* ─── 내 일정 ─── 스프레드시트 myEvents 시트: id, email, date, title, color */
+function mySheet_() {
+  const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
+  return ss.getSheetByName('myEvents') || (() => { const sh = ss.insertSheet('myEvents'); sh.appendRow(['id', 'email', 'date', 'title', 'color']); sh.getRange('C:C').setNumberFormat('@'); return sh; })();
+}
+function myRow_(r) {
+  return { id: r[0], date: r[2] instanceof Date ? Utilities.formatDate(r[2], 'Asia/Seoul', 'yyyy-MM-dd') : String(r[2]), title: String(r[3]), color: String(r[4] || '#7c6cf0') };
 }

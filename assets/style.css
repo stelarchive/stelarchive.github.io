@@ -1031,3 +1031,20 @@ body.cm-open .sh-nav { display: none; }
 .stamp.pop { animation: stamp-pop .5s cubic-bezier(.2,1.6,.4,1); }
 @keyframes stamp-pop { 0% { transform: rotate(-14deg) scale(2.2); opacity: 0; } 60% { opacity: 1; } 100% { transform: rotate(-14deg) scale(1); } }
 @media (max-width: 820px) { .stamp { width: 26px; height: 26px; font-size: 8px; right: 2px; bottom: 2px; } }
+
+/* 내 일정 */
+.my-add { margin-top: 10px; align-self: flex-start; }
+.my-form { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--line2); border-radius: 12px; }
+.my-form input[type=date], .my-form #myTitle { padding: 8px 10px; border: 1px solid var(--line2); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; font-size: 14px; }
+.my-row { display: flex; align-items: center; gap: 8px; }
+.my-row input[type=date] { flex: 1; }
+.my-row .btn { margin-left: auto; }
+.my-c input { display: none; }
+.my-c span { display: block; width: 22px; height: 22px; border-radius: 50%; background: var(--c); cursor: pointer; box-shadow: 0 0 0 2px var(--bg); }
+.my-c input:checked + span { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--c); }
+.my-form small { font-size: 11px; color: var(--dim); }
+.ev.ev-mine { background: transparent; color: var(--fg); border: 1.5px solid var(--c); border-radius: 4px; }
+.up-list li.up-mine { border-left: 3px dashed var(--c); padding-left: 10px; }
+.my-del { margin-left: auto; width: 26px; height: 26px; display: grid; place-items: center; color: var(--dim); }
+.my-del:hover { color: var(--fg); }
+.my-del svg { width: 14px; height: 14px; }

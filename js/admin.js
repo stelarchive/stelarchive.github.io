@@ -308,18 +308,11 @@ function paneEvents() {
 
 /* ─── 올라온 것 ─── */
 let contentFilter = '';
-function paneContent() {
-  const q = contentFilter.toLowerCase();
-  const items = Data.items.filter(i => !q || (i.title + ' ' + i.by + ' ' + i.members.join(' ')).toLowerCase().includes(q));
-  pane.innerHTML = `
-    <div class="editor">
-      <div class="row">
-        <h2 style="margin-right:auto">올라온 것 <small class="muted">${Data.items.length}개</small></h2>
-        <input id="cq" placeholder="제목 · 올린 사람 · 멤버 id" value="${esc(contentFilter)}" style="padding:10px 12px;background:var(--bg);border:1px solid var(--line2);min-width:240px">
-        ${LIVE ? '<button class="btn sm" id="refresh">드라이브 다시 읽기</button>' : ''}
-      </div>
-      <p class="muted sm">드라이브 폴더에 직접 넣은 파일은 10분 안에 저절로 나타난다. 바로 보고 싶으면 "드라이브 다시 읽기".</p>
-      <div style="overflow-x:auto"><table class="ctable">
+// 검색 칸은 그대로 두고 표만 바꾼다 (한글 조합이 끊기지 않게)
+function contentRows() {
+  const q = contentFilter.toLowerCase().replace(/\s+/g, '');
+  const items = Data.items.filter(i => !q || (i.title + i.by + i.members.join('') + i.members.map(id => Data.member(id)?.name || '').join('')).toLowerCase().replace(/\s+/g, '').includes(q));
+  return `<div style="overflow-x:auto"><table class="ctable">
         <tr><th></th><th>제목</th><th>종류</th><th>멤버</th><th>올린 사람</th><th>날짜</th><th></th></tr>
         ${items.map(it => `<tr>
           <td><span class="s-th" style="display:block;width:56px;background-image:url('${esc(it.thumb || '')}')"></span></td>
@@ -331,10 +324,21 @@ function paneContent() {
           <td><button class="icon-btn sm" data-cdel="${esc(it.id)}" title="지우기">${ICON.trash}</button></td>
         </tr>`).join('')}
       </table></div>
-      ${items.length ? '' : `<p class="muted" style="text-align:center;padding:40px 0">${Data.items.length ? '찾는 게 없다' : '아직 올라온 게 없다. 사이트에서 올리면 여기에 모인다.'}</p>`}
+      ${items.length ? '' : `<p class="muted" style="text-align:center;padding:40px 0">${Data.items.length ? '찾는 게 없다' : '아직 올라온 게 없다. 사이트에서 올리면 여기에 모인다.'}</p>`}`;
+}
+function paneContent() {
+  pane.innerHTML = `
+    <div class="editor">
+      <div class="row">
+        <h2 style="margin-right:auto">올라온 것 <small class="muted">${Data.items.length}개</small></h2>
+        <input id="cq" placeholder="제목 · 올린 사람 · 멤버" value="${esc(contentFilter)}" style="padding:10px 12px;background:var(--bg);border:1px solid var(--line2);min-width:240px">
+        ${LIVE ? '<button class="btn sm" id="refresh">드라이브 다시 읽기</button>' : ''}
+      </div>
+      <p class="muted sm">드라이브 폴더에 직접 넣은 파일은 10분 안에 저절로 나타난다. 바로 보고 싶으면 "드라이브 다시 읽기".</p>
+      <div id="crows">${contentRows()}</div>
     </div>`;
   const cq = $('#cq');
-  cq.oninput = () => { contentFilter = cq.value; paneContent(); const n = $('#cq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+  cq.oninput = () => { contentFilter = cq.value; $('#crows').innerHTML = contentRows(); };
   pane.oninput = null;
   if ($('#refresh')) $('#refresh').onclick = async () => {
     try { toast('읽는 중…'); const { items } = await api('refresh'); Data.set(Data.site, items); paneContent(); toast('다시 읽었다'); }

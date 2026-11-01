@@ -328,6 +328,7 @@ document.addEventListener('error', e => {
 }, true);
 
 document.addEventListener('submit', e => {
+  if (e.target.id === 'myForm') { e.preventDefault(); MyCal.add($('#myDate').value, $('#myTitle').value, $('input[name=myColor]:checked')?.value || MY_COLORS[0]); return; }
   if (e.target.id !== 'cmForm') return;
   e.preventDefault();
   Comments.send($('#cmText').value);
@@ -432,7 +433,7 @@ function footerHtml() {
 }
 
 /* ─── 캘린더 ─── */
-const eventType = type => t('event.' + (['birthday', 'debut', 'event', 'broadcast', 'release', 'etc'].includes(type) ? type : 'event'));
+const eventType = type => t('event.' + (['birthday', 'debut', 'event', 'broadcast', 'release', 'etc', 'mine'].includes(type) ? type : 'event'));
 const listOf = key => tRaw(key).split(',').map(x => x.trim());
 
 function eventsOn(y, mo, d) {
@@ -445,6 +446,8 @@ function eventsOn(y, mo, d) {
   for (const e of Data.site.events) {
     if (e.date <= iso && iso <= (e.end || e.date)) out.push({ type: e.type || 'event', title: e.title, color: Data.member(e.members?.[0])?.color, url: e.url });
   }
+  // 내 일정: 로그인한 본인에게만 보인다
+  for (const e of MyCal.list) if (e.date === iso) out.push({ type: 'mine', title: e.title, color: e.color, id: e.id });
   return out;
 }
 
@@ -504,6 +507,76 @@ const Attend = {
 };
 Auth.on(() => Attend.load());
 
+/* ─── 내 일정 ─── 구글 로그인한 사람이 캘린더를 개인 달력처럼 쓴다. 본인에게만 보인다 */
+const MY_COLORS = ['#7c6cf0', '#ff6f8e', '#3fa7e0', '#4fd6a0', '#f3b343'];
+const MyCal = {
+  list: [], loaded: '', form: false, busy: false,
+  async load() {
+    const who = Auth.user?.email || '';
+    if (this.loaded === who) return;
+    this.loaded = who;
+    this.list = [];
+    if (who) {
+      try {
+        if (LIVE) this.list = (await api('getMyEvents')).events || [];
+        else this.list = store.get('demoMyCal', {})[who] || [];
+      } catch (e) {}
+    }
+    repaintCal();
+  },
+  saveDemo() { const all = store.get('demoMyCal', {}); all[Auth.user.email] = this.list; store.set('demoMyCal', all); },
+  async add(date, title, color) {
+    title = title.trim().slice(0, 100);
+    if (!date || !title || this.busy) return;
+    this.busy = true;
+    try {
+      let e;
+      if (LIVE) e = (await api('addMyEvent', { date, title, color })).event;
+      else { e = { id: 'me' + Date.now(), date, title, color }; }
+      this.list.push(e);
+      if (!LIVE) this.saveDemo();
+      this.form = false;
+      const [y, m, d] = date.split('-').map(Number);
+      state.calMonth = [y, m - 1];
+      state.calPick = `${y}-${m - 1}-${d}`;
+      toast(tRaw('my.added'));
+    } catch (e) { toast(e.message, true); }
+    this.busy = false;
+    repaintCal();
+  },
+  async remove(id) {
+    if (!confirm(tRaw('my.confirmDelete'))) return;
+    toast(tRaw('upload.deleting'), false, true);
+    try {
+      if (LIVE) await api('removeMyEvent', { id });
+      this.list = this.list.filter(e => e.id !== id);
+      if (!LIVE) this.saveDemo();
+      toast(tRaw('upload.deleted'));
+    } catch (e) { toast(e.message, true); }
+    repaintCal();
+  },
+};
+Auth.on(() => MyCal.load());
+function repaintCal() {
+  const box = $('#cal');
+  if (!box) return;
+  box.innerHTML = calendarHtml(location.hash.startsWith('#/calendar'));
+  if ($('#attLogin')) Auth.renderButton($('#attLogin'));
+}
+function myCalHtml() {
+  if (!Auth.user) return '';
+  if (!MyCal.form) return `<button type="button" class="btn sm line my-add" data-myform>${ICON.plus} ${esc(t('my.add'))}</button>`;
+  const [py, pm, pd] = state.calPick ? state.calPick.split('-').map(Number) : [];
+  const def = state.calPick ? `${py}-${pad2(pm + 1)}-${pad2(pd)}` : kstToday();
+  return `<form class="my-form" id="myForm">
+    <div class="my-row"><input type="date" id="myDate" value="${def}" required><button type="button" class="icon-btn sm" data-myform aria-label="닫기">${ICON.close}</button></div>
+    <input id="myTitle" maxlength="100" placeholder="${esc(t('my.placeholder'))}" required>
+    <div class="my-row">${MY_COLORS.map((c, i) => `<label class="my-c" style="--c:${c}"><input type="radio" name="myColor" value="${c}" ${i ? '' : 'checked'}><span></span></label>`).join('')}
+      <button type="submit" class="btn sm solid" ${MyCal.busy ? 'disabled' : ''}>${esc(t('my.save'))}</button></div>
+    <small>${esc(t('my.private'))}</small>
+  </form>`;
+}
+
 function attendHtml() {
   if (!Auth.user) return `<div class="att"><p>${esc(t('att.login'))}</p><div id="attLogin"></div></div>`;
   const done = Attend.dates.has(Attend.today);
@@ -529,7 +602,7 @@ function calendarHtml(big) {
       ${bd ? birthdayArt(ev.filter(e => e.type === 'birthday')) : ''}
       <span class="n">${d}</span>
       ${Attend.dates.has(`${y}-${pad2(mo + 1)}-${pad2(d)}`) ? `<i class="stamp ${Attend.justNow && `${y}-${pad2(mo + 1)}-${pad2(d)}` === Attend.today ? 'pop' : ''}" aria-label="${esc(tRaw('att.stamp'))}">${esc(t('att.stamp'))}</i>` : ''}
-      ${(bd ? ev.filter(e => e.type !== 'birthday') : ev).slice(0, 2).map(e => `<span class="ev" ${e.color ? `style="--c:${esc(e.color)}"` : ''}>${esc(e.title)}</span>`).join('')}
+      ${(bd ? ev.filter(e => e.type !== 'birthday') : ev).slice(0, 2).map(e => `<span class="ev ${e.type === 'mine' ? 'ev-mine' : ''}" ${e.color ? `style="--c:${esc(e.color)}"` : ''}>${esc(e.title)}</span>`).join('')}
       ${(bd ? ev.filter(e => e.type !== 'birthday').length : ev.length) > 2 ? `<span class="ev more">+${ev.length - 2}</span>` : ''}
     </button>`;
   }
@@ -556,11 +629,13 @@ function calendarHtml(big) {
         <button type="button" class="btn sm line" data-cal="0">${esc(t('cal.today'))}</button>
       </div>
       ${attendHtml()}
+      ${myCalHtml()}
       <h3>${state.calPick ? esc(t('cal.monthDay', { m: +state.calPick.split('-')[1] + 1, d: state.calPick.split('-')[2] })) : esc(t('cal.upcoming'))}</h3>
-      ${list.length ? `<ul class="up-list">${list.map(e => `<li class="${e.type === 'birthday' ? 'up-bd' : ''}" style="${e.color ? `--c:${esc(e.color)}` : ''}">
+      ${list.length ? `<ul class="up-list">${list.map(e => `<li class="${e.type === 'birthday' ? 'up-bd' : e.type === 'mine' ? 'up-mine' : ''}" style="${e.color ? `--c:${esc(e.color)}` : ''}">
         <span class="d">${state.calPick ? `${e.d.getMonth() + 1}/${e.d.getDate()}` : dday(e.d)}</span>
         ${e.type === 'birthday' ? avatarHtml(e.member, 'av') : ''}
         <span class="t"><em>${esc(eventType(e.type))} · ${e.d.getMonth() + 1}/${e.d.getDate()}</em>${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a>` : esc(e.title)}</span>
+        ${e.type === 'mine' ? `<button type="button" class="my-del" data-mydel="${esc(e.id)}" aria-label="${esc(t('list.delete'))}">${ICON.close}</button>` : ''}
       </li>`).join('')}</ul>` : `<p class="muted">${esc(t('cal.none'))}</p>`}
     </div>
     <div class="cal-main">
@@ -1168,6 +1243,8 @@ document.addEventListener('click', e => {
     renderListen(); ensureFoot(); return;
   }
   if (tg.closest('[data-attend]')) { Attend.check(); return; }
+  if (tg.closest('[data-myform]')) { MyCal.form = !MyCal.form; repaintCal(); if (MyCal.form) $('#myTitle')?.focus(); return; }
+  if ((el = tg.closest('[data-mydel]'))) { MyCal.remove(el.dataset.mydel); return; }
   if (tg.closest('[data-fulldl]')) { Player.setFull(!Player.full); renderListen(); ensureFoot(); return; }
   if (tg.closest('[data-clearsongs]')) { if (confirm(tRaw('listen.clearConfirm'))) SongStore.clear().then(() => { renderListen(); ensureFoot(); }); return; }
   if (tg.closest('[data-prefer]')) { Player.setPrefer(Player.prefer === 'drive' ? 'youtube' : 'drive'); renderListen(); ensureFoot(); return; }
