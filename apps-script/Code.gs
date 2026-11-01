@@ -490,6 +490,8 @@ function driveItems_(site) {
       const files = kf.getFiles();
       while (files.hasNext()) {
         const file = files.next();
+        // 드라이브에 직접 넣은 파일: 링크 공유를 켜고(안 켜면 사이트에서 직접 재생이 안 된다) 폴더 기준 정보를 적어 둔다 — 한 번만
+        if (!file.getDescription()) adopt_(file, base);
         const meta = parseMeta_(file.getDescription());
         if (!meta.members || !meta.members.length) meta.members = base.members;
         if (meta.group === undefined) meta.group = base.group;
@@ -753,4 +755,29 @@ function mySheet_() {
 }
 function myRow_(r) {
   return { id: r[0], date: r[2] instanceof Date ? Utilities.formatDate(r[2], 'Asia/Seoul', 'yyyy-MM-dd') : String(r[2]), title: String(r[3]), color: String(r[4] || '#7c6cf0') };
+}
+
+/* 드라이브에 직접 넣은 파일을 사이트 파일로 받아들인다 */
+function adopt_(file, base) {
+  try { sharePublic_(file); } catch (e) { Logger.log('공유 실패: ' + file.getName() + ' — ' + e.message); return; }
+  try {
+    file.setDescription(JSON.stringify({ title: file.getName().replace(/\.[^.]+$/, '').replace(/_MP3( \(\d+\))?$/i, ''), members: base.members, group: base.group, byName: '', byEmail: '' }));
+  } catch (e) {}
+}
+
+/* 이미 들어 있는 파일 중 공유가 꺼진 것을 한 번에 켠다 (편집기에서 한 번 돌리면 된다) */
+function fixSharing() {
+  let n = 0;
+  const walk = f => {
+    const fs = f.getFiles();
+    while (fs.hasNext()) {
+      const file = fs.next();
+      try { if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) { sharePublic_(file); n++; } } catch (e) {}
+    }
+    const ds = f.getFolders();
+    while (ds.hasNext()) { const d = ds.next(); if (d.getName() !== SYS_DIR) walk(d); }
+  };
+  walk(root_());
+  clearCache_();
+  Logger.log('공유를 켠 파일: ' + n + '개');
 }
