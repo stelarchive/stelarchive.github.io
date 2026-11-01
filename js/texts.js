@@ -243,6 +243,7 @@ const TEXT_SECTIONS = [
     ['upload.errLink', '링크가 이상할 때', '링크가 이상하다'],
     ['upload.reading', '파일 읽는 중', '파일 읽는 중…'],
     ['upload.uploading', '드라이브에 올리는 중', '드라이브에 올리는 중… (큰 파일은 1분쯤 걸린다)'],
+    ['upload.uploadingP', '드라이브에 올리는 중 (진행률)', '드라이브에 올리는 중… {p}%'],
     ['upload.sending', '링크 올리는 중', '올리는 중…'],
   ] },
   { id: 'player', name: '플레이어', items: [

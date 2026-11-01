@@ -1411,12 +1411,19 @@ $('#upload form').addEventListener('submit', async e => {
     let item;
     const kind = isVideoKind(up.kind) ? await pickVideoKind(url || alt, f) : up.kind;
     if (f) {
-      if (f.size > (CFG.maxUploadMB || 35) * 1048576) throw new Error(tRaw('upload.errSize', { mb: CFG.maxUploadMB || 35 }));
+      if (f.size > 2e9) throw new Error(tRaw('upload.errSize', { mb: 2000 }));
       if (!LIVE) throw new Error(tRaw('upload.errDemo'));
-      status.textContent = tRaw('upload.reading');
-      const data = await fileToBase64(f);
-      status.textContent = tRaw('upload.uploading');
-      item = (await api('upload', { kind, title, members, group, filename: f.name, mimeType: f.type, data, url })).item;
+      status.textContent = tRaw('upload.uploadingP', { p: 0 });
+      try {
+        item = (await uploadToDrive(f, { kind, title, members, group, url }, p => { status.textContent = tRaw('upload.uploadingP', { p: Math.round(p * 100) }); })).item;
+      } catch (err) {
+        // 바로 올리기가 안 되는 경우(예전 서버 등) 작은 파일은 예전 방식으로
+        if (f.size > 35 * 1048576 || /까지만|사이트에서만|멤버/.test(err.message)) throw err;
+        status.textContent = tRaw('upload.reading');
+        const data = await fileToBase64(f);
+        status.textContent = tRaw('upload.uploading');
+        item = (await api('upload', { kind, title, members, group, filename: f.name, mimeType: f.type, data, url })).item;
+      }
     } else {
       const main = url || alt, second = url ? alt : '';
       if (!/^https?:\/\//.test(main) || (second && !/^https?:\/\//.test(second))) throw new Error(tRaw('upload.errLink'));

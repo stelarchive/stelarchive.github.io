@@ -33,6 +33,7 @@ const ALL_DIR     = '전체';
 const SYS_DIR     = '_사이트';
 const KINDS = { cover: '커버곡', original: '오리곡', album: '앨범', clip: '클립', shorts: '쇼츠', fanart: '팬아트', meme: '짤' };
 const GROUP_KINDS = ['cover', 'original', 'album', 'clip'];
+const MAX_UPLOAD_GB = 2; // 사이트에서 한 번에 올릴 수 있는 파일 크기
 const CACHE_TTL = 21600; // 드라이브 목록 캐시 (초) — warmCache 가 10분마다 새로 채운다
 
 const props = PropertiesService.getScriptProperties();
@@ -117,6 +118,44 @@ const ACTIONS = {
     file.setDescription(JSON.stringify(meta));
     const item = fileItem_(file, b.kind, meta, site);
     editCache_(list => [item].concat(list));
+    return { item: item };
+  },
+
+  /* 큰 파일: 서버(이 계정)가 드라이브에 "올릴 자리"를 열어 주고, 브라우저가 파일을 그 자리로 바로 보낸다.
+     Apps Script 를 거치지 않으니 35MB 제한이 없다 (MAX_UPLOAD_GB 까지). 다 올린 뒤 finishUpload 로 정보를 적는다 */
+  startUpload(b, u) {
+    if (!KINDS[b.kind]) throw new Error('종류가 이상하다');
+    const size = Number(b.size) || 0;
+    if (!size || size > MAX_UPLOAD_GB * 1e9) throw new Error(MAX_UPLOAD_GB + 'GB 까지만 올릴 수 있다');
+    const origin = String(b.origin || '');
+    if (!/^https:\/\/stelarchive\.github\.io$|^http:\/\/localhost(:\d+)?$/.test(origin)) throw new Error('이 사이트에서만 올릴 수 있다');
+    const site = readSite_();
+    const members = cleanMembers_(b.members, site);
+    if (!members.length && !b.group) throw new Error('멤버를 하나 이상 골라야 한다');
+    const folder = targetFolder_(site, b.kind, members, b.group);
+    const mime = b.mimeType || 'application/octet-stream';
+    const res = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id', {
+      method: 'post', contentType: 'application/json; charset=UTF-8', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken(), 'X-Upload-Content-Type': mime, 'X-Upload-Content-Length': String(size), Origin: origin },
+      payload: JSON.stringify({ name: String(b.filename || 'file').slice(0, 200), parents: [folder.getId()], mimeType: mime }),
+    });
+    const loc = res.getHeaders().Location || res.getHeaders().location;
+    if (res.getResponseCode() !== 200 || !loc) throw new Error('올릴 자리를 못 열었다 (' + res.getResponseCode() + ')');
+    return { uploadUrl: loc };
+  },
+  finishUpload(b, u) {
+    const file = DriveApp.getFileById(String(b.id || ''));
+    if (file.getDescription()) throw new Error('이미 정리된 파일이다');
+    if (Date.now() - file.getDateCreated().getTime() > 6 * 3600e3) throw new Error('너무 오래된 파일이다');
+    const site = readSite_();
+    const members = cleanMembers_(b.members, site);
+    const meta = { title: (b.title || '').trim(), members: members, group: b.group || '', byEmail: u.email, byName: u.name };
+    if (/^https?:\/\//.test(String(b.url || ''))) meta.url = String(b.url).trim();
+    sharePublic_(file);
+    file.setDescription(JSON.stringify(meta));
+    const item = fileItem_(file, b.kind, meta, site);
+    editCache_(list => [item].concat(list));
+    CacheService.getScriptCache().remove('storage');
     return { item: item };
   },
 

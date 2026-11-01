@@ -314,6 +314,33 @@ async function api(action, payload = {}) {
   return res;
 }
 
+/* 큰 파일 올리기: 서버가 열어 준 드라이브 "올릴 자리"로 브라우저가 8MB씩 바로 보낸다.
+   중간에 끊기면 받은 데까지 확인하고 이어서 보낸다. onProgress(0~1) */
+async function uploadToDrive(file, meta, onProgress) {
+  const { uploadUrl } = await api('startUpload', { ...meta, filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size, origin: location.origin });
+  const CHUNK = 8 * 1024 * 1024; // 256KB 의 배수여야 한다
+  let start = 0, tries = 0;
+  while (start < file.size) {
+    const end = Math.min(start + CHUNK, file.size);
+    let r;
+    try {
+      r = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Range': `bytes ${start}-${end - 1}/${file.size}` }, body: file.slice(start, end) });
+    } catch (e) {
+      if (++tries > 5) throw new Error('인터넷이 끊겨서 못 올렸다');
+      await new Promise(z => setTimeout(z, 1500 * tries));
+      // 어디까지 받았는지 물어보고 거기서부터
+      const q = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Range': `bytes */${file.size}` } }).catch(() => null);
+      const got = q?.headers.get('Range')?.match(/-(\d+)$/);
+      start = got ? +got[1] + 1 : start;
+      continue;
+    }
+    if (r.status === 308) { const got = r.headers.get('Range')?.match(/-(\d+)$/); start = got ? +got[1] + 1 : end; tries = 0; onProgress?.(start / file.size); continue; }
+    if (r.ok) { onProgress?.(1); const j = await r.json().catch(() => ({})); return api('finishUpload', { ...meta, id: j.id }); }
+    throw new Error('드라이브가 받지 않았다 (' + r.status + ')');
+  }
+  throw new Error('올리기가 끝나지 않았다');
+}
+
 function fileToBase64(file) {
   return new Promise((ok, bad) => {
     const r = new FileReader();
