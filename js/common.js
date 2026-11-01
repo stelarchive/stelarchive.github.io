@@ -299,7 +299,7 @@ const namuLink = m => m.links?.namu || (m.fullName ? 'https://namu.wiki/w/' + en
 /* ─── 서버 요청 ─── */
 async function api(action, payload = {}) {
   if (!LIVE) throw new Error('아직 서버(Apps Script)가 연결되지 않았다. README 를 보자');
-  const token = Auth.token();
+  const token = await Auth.fresh();
   if (!token) throw new Error('먼저 구글 로그인을 하자');
   // text/plain 으로 보내야 Apps Script 가 CORS 사전 요청 없이 받는다
   const res = await fetch(CFG.scriptUrl, {
@@ -344,8 +344,13 @@ const Auth = {
         callback: r => this.receive(r.credential),
         auto_select: true,
         cancel_on_tap_outside: true,
+        use_fedcm_for_prompt: true,
+        itp_support: true,
       });
       this.emit();
+      // 전에 로그인했던 사람은 들어오자마자 자동으로 다시 로그인한다
+      if (!this.user && store.get('wasLoggedIn')) this.silent();
+      this.schedule();
     };
     document.head.append(s);
     this.emit();
@@ -353,8 +358,13 @@ const Auth = {
 
   receive(credential) {
     const p = JSON.parse(decodeURIComponent(escape(atob(credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))));
-    this.user = { token: credential, email: p.email, name: p.name || p.email, picture: p.picture || '', exp: p.exp };
+    const admin = this.user?.email === p.email && this.user?.admin;
+    this.user = { token: credential, email: p.email, name: p.name || p.email, picture: p.picture || '', exp: p.exp, admin };
     store.set('auth', this.user);
+    store.set('wasLoggedIn', true);
+    this.waiters?.forEach(fn => fn());
+    this.waiters = [];
+    this.schedule();
     this.emit();
     // 관리자면 남이 올린 것도 고치고 지울 수 있게 표시해 둔다
     if (LIVE) api('whoami').then(r => {
@@ -369,6 +379,25 @@ const Auth = {
     if (this.user && this.user.exp * 1000 < Date.now() + 30e3) this.logout(true);
     return this.user?.token || '';
   },
+  // 구글 로그인 표시는 1시간마다 만료된다 → 만료 전에 조용히 새로 받는다 (창이 안 뜨고 자동으로)
+  silent() {
+    if (!window.google?.accounts?.id) return;
+    try { google.accounts.id.prompt(); } catch (e) {}
+  },
+  schedule() {
+    clearTimeout(this._refresh);
+    if (!this.user) return;
+    const wait = this.user.exp * 1000 - Date.now() - 5 * 60e3;
+    this._refresh = setTimeout(() => this.silent(), Math.max(10e3, wait));
+  },
+  // 요청 전에: 곧 만료면 새로 받을 때까지 잠깐 기다린다
+  async fresh() {
+    if (this.user && this.user.exp * 1000 > Date.now() + 60e3) return this.user.token;
+    if (!store.get('wasLoggedIn') || !window.google?.accounts?.id) return this.token();
+    this.silent();
+    await new Promise(ok => { (this.waiters ||= []).push(ok); setTimeout(ok, 6000); });
+    return this.token();
+  },
 
   renderButton(el) {
     if (!window.google?.accounts?.id) {
@@ -382,6 +411,9 @@ const Auth = {
   logout(expired) {
     this.user = null;
     store.del('auth');
+    clearTimeout(this._refresh);
+    if (expired && store.get('wasLoggedIn')) { this.emit(); this.silent(); return; } // 만료: 조용히 다시 로그인
+    store.del('wasLoggedIn');
     if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
     if (expired) toast('로그인이 만료됐다. 다시 로그인하자', true);
     this.emit();

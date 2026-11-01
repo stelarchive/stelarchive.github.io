@@ -458,6 +458,62 @@ function birthdayArt(bds) {
     <span class="bd-cap"><em>${esc(t('cal.happy'))}</em><b>${bds.map(b => esc(b.member?.name || '')).join(' · ')}</b></span>`;
 }
 
+/* ─── 출석 체크 ───
+   로그인한 사람이 하루 한 번 캘린더에서 누르면 그날 칸에 도장이 찍힌다. 서버가 없으면 이 브라우저에만(미리보기) */
+const kstToday = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const Attend = {
+  dates: new Set(), today: kstToday(), loaded: '', busy: false, justNow: false,
+  async load() {
+    const who = Auth.user?.email || '';
+    if (this.loaded === who) return;
+    this.loaded = who;
+    this.dates = new Set();
+    if (!who) return this.paint();
+    try {
+      if (LIVE) { const r = await api('getAttendance'); this.dates = new Set(r.dates); this.today = r.today; }
+      else this.dates = new Set(store.get('demoAttend', {})[who] || []);
+    } catch (e) {}
+    this.paint();
+  },
+  async check() {
+    if (!Auth.user || this.busy) return;
+    this.busy = true;
+    this.paint();
+    try {
+      if (LIVE) { const r = await api('checkIn'); this.dates = new Set(r.dates); this.today = r.today; }
+      else {
+        const all = store.get('demoAttend', {});
+        all[Auth.user.email] = [...new Set([...(all[Auth.user.email] || []), kstToday()])];
+        store.set('demoAttend', all);
+        this.dates = new Set(all[Auth.user.email]);
+      }
+      this.justNow = true;
+      toast(tRaw('att.done', { n: this.dates.size }));
+    } catch (e) { toast(e.message, true); }
+    this.busy = false;
+    this.paint();
+    setTimeout(() => (this.justNow = false), 1500);
+  },
+  streak() {
+    let n = 0, d = new Date(this.today + 'T00:00:00Z');
+    if (!this.dates.has(this.today)) d.setUTCDate(d.getUTCDate() - 1); // 오늘 아직이면 어제까지 이어진 것
+    while (this.dates.has(d.toISOString().slice(0, 10))) { n++; d.setUTCDate(d.getUTCDate() - 1); }
+    return n;
+  },
+  paint() { if (/^#\/?(calendar)?$/.test(location.hash) || location.hash === '') route(true); },
+};
+Auth.on(() => Attend.load());
+
+function attendHtml() {
+  if (!Auth.user) return `<div class="att"><p>${esc(t('att.login'))}</p><div id="attLogin"></div></div>`;
+  const done = Attend.dates.has(Attend.today);
+  return `<div class="att ${done ? 'done' : ''}">
+    <div class="att-n"><b>${Attend.dates.size}</b><span>${esc(t('att.days'))}</span>${Attend.streak() > 1 ? `<small>${esc(t('att.streak', { n: Attend.streak() }))}</small>` : ''}</div>
+    ${done ? `<span class="att-ok">${ICON.sparkle} ${esc(t('att.today'))}</span>`
+      : `<button type="button" class="btn solid att-btn" data-attend ${Attend.busy ? 'disabled' : ''}>${esc(Attend.busy ? t('att.checking') : t('att.button'))}</button>`}
+  </div>`;
+}
+
 function calendarHtml(big) {
   const now = new Date();
   const [y, mo] = state.calMonth || [now.getFullYear(), now.getMonth()];
@@ -472,6 +528,7 @@ function calendarHtml(big) {
     cells += `<button type="button" class="cd ${todayKey === key ? 'today' : ''} ${state.calPick === key ? 'pick' : ''} ${bd ? 'bday' : ''}" ${bd ? `style="--c:${esc(bd.color || 'var(--accent)')}"` : ''} data-day="${key}" aria-label="${mo + 1}월 ${d}일${ev.length ? ' 일정 ' + ev.length + '개' : ''}">
       ${bd ? birthdayArt(ev.filter(e => e.type === 'birthday')) : ''}
       <span class="n">${d}</span>
+      ${Attend.dates.has(`${y}-${pad2(mo + 1)}-${pad2(d)}`) ? `<i class="stamp ${Attend.justNow && `${y}-${pad2(mo + 1)}-${pad2(d)}` === Attend.today ? 'pop' : ''}" aria-label="${esc(tRaw('att.stamp'))}">${esc(t('att.stamp'))}</i>` : ''}
       ${(bd ? ev.filter(e => e.type !== 'birthday') : ev).slice(0, 2).map(e => `<span class="ev" ${e.color ? `style="--c:${esc(e.color)}"` : ''}>${esc(e.title)}</span>`).join('')}
       ${(bd ? ev.filter(e => e.type !== 'birthday').length : ev.length) > 2 ? `<span class="ev more">+${ev.length - 2}</span>` : ''}
     </button>`;
@@ -498,6 +555,7 @@ function calendarHtml(big) {
         <button type="button" class="icon-btn" data-cal="1" aria-label="다음 달">${ICON.chevR}</button>
         <button type="button" class="btn sm line" data-cal="0">${esc(t('cal.today'))}</button>
       </div>
+      ${attendHtml()}
       <h3>${state.calPick ? esc(t('cal.monthDay', { m: +state.calPick.split('-')[1] + 1, d: state.calPick.split('-')[2] })) : esc(t('cal.upcoming'))}</h3>
       ${list.length ? `<ul class="up-list">${list.map(e => `<li class="${e.type === 'birthday' ? 'up-bd' : ''}" style="${e.color ? `--c:${esc(e.color)}` : ''}">
         <span class="d">${state.calPick ? `${e.d.getMonth() + 1}/${e.d.getDate()}` : dday(e.d)}</span>
@@ -1046,6 +1104,7 @@ function route(keepScroll) {
   if (page === 'play') playGlow();
   markNav();
   applyPositions(view);
+  if ($('#attLogin')) Auth.renderButton($('#attLogin'));
   Menu.closeDrawer();
   Menu.setTop(false);
   if (!keepScroll) window.scrollTo(0, 0);
@@ -1105,6 +1164,7 @@ document.addEventListener('click', e => {
     Player.refreshCover();
     renderListen(); ensureFoot(); return;
   }
+  if (tg.closest('[data-attend]')) { Attend.check(); return; }
   if (tg.closest('[data-fulldl]')) { Player.setFull(!Player.full); renderListen(); ensureFoot(); return; }
   if (tg.closest('[data-clearsongs]')) { if (confirm(tRaw('listen.clearConfirm'))) SongStore.clear().then(() => { renderListen(); ensureFoot(); }); return; }
   if (tg.closest('[data-prefer]')) { Player.setPrefer(Player.prefer === 'drive' ? 'youtube' : 'drive'); renderListen(); ensureFoot(); return; }

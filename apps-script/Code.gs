@@ -178,6 +178,16 @@ const ACTIONS = {
     return {};
   },
 
+  // 출석: 하루 한 번 (한국 날짜 기준)
+  checkIn(b, u) {
+    const today = kstToday_();
+    const sh = attSheet_();
+    const dates = attDates_(sh, u.email);
+    if (dates.indexOf(today) < 0) { sh.appendRow([u.email, u.name, today]); dates.push(today); }
+    return { dates: dates, today: today };
+  },
+  getAttendance(b, u) { return { dates: attDates_(attSheet_(), u.email), today: kstToday_() }; },
+
   // 댓글: 구글 로그인한 사람만. 500자까지
   addComment(b, u) {
     const text = String(b.text || '').trim().slice(0, 500);
@@ -635,4 +645,18 @@ function storage_() {
   try { out.used = DriveApp.getStorageUsed(); out.limit = DriveApp.getStorageLimit(); } catch (e) {}
   cache.put('storage', JSON.stringify(out), 600);
   return out;
+}
+
+/* ─── 출석 ─── 스프레드시트 attendance 시트: email, name, date(yyyy-MM-dd, 한국 시간) */
+function kstToday_() { return Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd'); }
+function attSheet_() {
+  const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
+  return ss.getSheetByName('attendance') || (() => { const sh = ss.insertSheet('attendance'); sh.appendRow(['email', 'name', 'date']); sh.getRange('C:C').setNumberFormat('@'); return sh; })();
+}
+function attDates_(sh, email) {
+  const hits = sh.getRange('A:A').createTextFinder(email).matchEntireCell(true).findAll();
+  return hits.map(r => {
+    const v = sh.getRange(r.getRow(), 3).getValue();
+    return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd') : String(v);
+  });
 }
