@@ -85,6 +85,7 @@ function doGet(e) {
     if (action === 'items') return out_({ ok: true, items: allItems_() });
     if (action === 'comments') return out_({ ok: true, comments: commentsFor_(String(e.parameter.item || '')) });
     if (action === 'commentCounts') return out_({ ok: true, counts: commentCounts_() });
+    if (action === 'schedule') return out_({ ok: true, events: scheduleFor_(String(e.parameter.month || '')) });
     if (action === 'storage') return out_(Object.assign({ ok: true }, storage_()));
     return out_({ ok: false, error: '모르는 요청' });
   } catch (err) { return out_({ ok: false, error: String(err) }); }
@@ -216,6 +217,31 @@ const ACTIONS = {
       file.setDescription(JSON.stringify(meta));
     }
     editCache_(list => list.map(x => (x.id === b.id ? Object.assign(x, { title: title }) : x)));
+    return {};
+  },
+
+  // 방송 일정: 로그인하면 누구나 넣고, 모두가 본다. 넣은 사람(과 관리자)만 지운다
+  addSchedule(b, u) {
+    const date = String(b.date || ''), time = String(b.time || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('날짜가 이상하다');
+    if (time && !/^\d{2}:\d{2}$/.test(time)) throw new Error('시간이 이상하다');
+    const site = readSite_();
+    if (!site.members.some(m => m.id === b.member)) throw new Error('멤버를 골라야 한다');
+    const type = ['live', 'plan', 'off', 'song', 'etc'].indexOf(b.type) >= 0 ? b.type : 'etc';
+    const url = /^https?:\/\//.test(String(b.url || '')) ? String(b.url).slice(0, 300) : '';
+    const row = ['sc_' + Utilities.getUuid().slice(0, 12), date, time, b.member, type, String(b.title || '').trim().slice(0, 80), url, u.email, u.name, new Date().toISOString()];
+    schSheet_().appendRow(row);
+    CacheService.getScriptCache().remove('sch_' + date.slice(0, 7));
+    return { event: schRow_(row) };
+  },
+  removeSchedule(b, u) {
+    const sh = schSheet_();
+    const hit = sh.getRange('A:A').createTextFinder(String(b.id || '')).matchEntireCell(true).findNext();
+    if (!hit) return {};
+    const r = sh.getRange(hit.getRow(), 1, 1, 10).getValues()[0];
+    if (!isAdmin_(u) && r[7] !== u.email) throw new Error('자기가 넣은 일정만 지울 수 있다');
+    sh.deleteRow(hit.getRow());
+    CacheService.getScriptCache().remove('sch_' + schRow_(r).date.slice(0, 7));
     return {};
   },
 
@@ -780,4 +806,23 @@ function fixSharing() {
   walk(root_());
   clearCache_();
   Logger.log('공유를 켠 파일: ' + n + '개');
+}
+
+/* ─── 방송 일정 ─── 스프레드시트 schedule 시트: id, date, time, member, type, title, url, email, name, at */
+function schSheet_() {
+  const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
+  return ss.getSheetByName('schedule') || (() => { const sh = ss.insertSheet('schedule'); sh.appendRow(['id', 'date', 'time', 'member', 'type', 'title', 'url', 'email', 'name', 'at']); sh.getRange('B:C').setNumberFormat('@'); return sh; })();
+}
+function schRow_(r) {
+  const d = v => v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd') : String(v);
+  const tm = v => v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'HH:mm') : String(v || '');
+  return { id: r[0], date: d(r[1]), time: tm(r[2]), member: r[3], type: r[4], title: String(r[5] || ''), url: String(r[6] || ''), by: String(r[8] || ''), hash: emailHash_(r[7]) };
+}
+function scheduleFor_(month) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return [];
+  const cache = CacheService.getScriptCache(), hit = cache.get('sch_' + month);
+  if (hit) return JSON.parse(hit);
+  const out = schSheet_().getDataRange().getValues().slice(1).map(schRow_).filter(e => e.date.indexOf(month) === 0);
+  cache.put('sch_' + month, JSON.stringify(out), 300);
+  return out;
 }

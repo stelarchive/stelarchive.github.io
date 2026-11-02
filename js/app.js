@@ -328,6 +328,12 @@ document.addEventListener('error', e => {
 }, true);
 
 document.addEventListener('submit', e => {
+  if (e.target.id === 'schForm') {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    Sched.add({ date: f.date, time: f.time || '', member: f.member, type: f.type || 'live', title: (f.title || '').trim(), url: (f.url || '').trim() });
+    return;
+  }
   if (e.target.id === 'myForm') { e.preventDefault(); MyCal.add($('#myDate').value, $('#myTitle').value, $('input[name=myColor]:checked')?.value || MY_COLORS[0]); return; }
   if (e.target.id !== 'cmForm') return;
   e.preventDefault();
@@ -557,6 +563,7 @@ const MyCal = {
   },
 };
 Auth.on(() => MyCal.load());
+Auth.on(() => { if (location.hash.startsWith('#/schedule')) paintSchedule(); });
 function repaintCal() {
   const box = $('#cal');
   if (!box) return;
@@ -630,6 +637,7 @@ function calendarHtml(big) {
       </div>
       ${attendHtml()}
       ${myCalHtml()}
+      <a class="sch-link" href="#/schedule">${esc(t('sch.link'))} ${ICON.chevR}</a>
       <h3>${state.calPick ? esc(t('cal.monthDay', { m: +state.calPick.split('-')[1] + 1, d: state.calPick.split('-')[2] })) : esc(t('cal.upcoming'))}</h3>
       ${list.length ? `<ul class="up-list">${list.map(e => `<li class="${e.type === 'birthday' ? 'up-bd' : e.type === 'mine' ? 'up-mine' : ''}" style="${e.color ? `--c:${esc(e.color)}` : ''}">
         <span class="d">${state.calPick ? `${e.d.getMonth() + 1}/${e.d.getDate()}` : dday(e.d)}</span>
@@ -847,6 +855,141 @@ function renderCalendarPage() {
     <section id="cal">${calendarHtml(true)}</section>`;
 }
 
+/* ─── 방송 일정 ───
+   멤버별 방송 · 휴방 일정을 모두가 같이 채우는 달력. 구글 로그인하면 누구나 넣고, 넣은 사람(과 관리자)만 지운다 */
+const SCH_TYPES = ['live', 'plan', 'off', 'song', 'etc'];
+const Sched = {
+  months: {}, // 'yyyy-mm' → [{id, date, time, member, type, title, url, by, hash}]
+  month: null, pick: '', who: '', form: false, busy: false,
+  key(y, m) { return `${y}-${pad2(m + 1)}`; },
+  async load(y, m, force) {
+    const k = this.key(y, m);
+    if (this.months[k] && !force) return;
+    try {
+      if (LIVE) { const r = await fetch(CFG.scriptUrl + '?action=schedule&month=' + k).then(r => r.json()); this.months[k] = r.ok ? r.events : []; }
+      else this.months[k] = store.get('demoSched', []).filter(e => e.date.startsWith(k));
+    } catch (e) { this.months[k] = []; }
+    if (location.hash.startsWith('#/schedule')) paintSchedule();
+  },
+  list(y, m) { return this.months[this.key(y, m)] || []; },
+  label(e) { return e.title || tRaw('sch.type.' + (SCH_TYPES.includes(e.type) ? e.type : 'etc')); },
+  mine(e) { return !!Auth.user && (Auth.user.admin || (e.email ? e.email === Auth.user.email : e.hash === Comments.myHash)); },
+  async add(f) {
+    if (this.busy) return;
+    this.busy = true;
+    paintSchedule();
+    try {
+      let e;
+      if (LIVE) e = (await api('addSchedule', f)).event;
+      else {
+        e = { id: 's' + Date.now(), ...f, by: Auth.user?.name || '나', email: Auth.user?.email || '' };
+        store.set('demoSched', [...store.get('demoSched', []), e]);
+      }
+      const k = e.date.slice(0, 7);
+      (this.months[k] ||= []).push(e);
+      this.pick = e.date;
+      this.form = false;
+      toast(tRaw('sch.added'));
+    } catch (err) { toast(err.message, true); }
+    this.busy = false;
+    paintSchedule();
+  },
+  async remove(id) {
+    if (!confirm(tRaw('sch.confirmDelete'))) return;
+    toast(tRaw('upload.deleting'), false, true);
+    try {
+      if (LIVE) await api('removeSchedule', { id });
+      else store.set('demoSched', store.get('demoSched', []).filter(e => e.id !== id));
+      for (const k in this.months) this.months[k] = this.months[k].filter(e => e.id !== id);
+      toast(tRaw('upload.deleted'));
+    } catch (err) { toast(err.message, true); }
+    paintSchedule();
+  },
+};
+const memberMark = m => m ? (m.oshi ? `<span class="sch-mk">${esc(m.oshi)}</span>` : avatarHtml(m, 'av sch-av')) : `<span class="sch-mk">✦</span>`;
+function schItem(e, full) {
+  const m = Data.member(e.member);
+  const c = m?.color || 'var(--accent)';
+  const text = (e.time ? e.time + ' ' : '') + Sched.label(e);
+  const inner = `${memberMark(m)}<span class="sch-tx">${esc(text)}</span>`;
+  return e.time
+    ? `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'span'} class="sch-ev timed" style="--c:${esc(c)}" title="${esc((m?.name || '') + ' · ' + text + (e.by ? ' · ' + e.by : ''))}">${inner}${full ? schDel(e) : ''}</${e.url ? 'a' : 'span'}>`
+    : `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'span'} class="sch-ev allday" style="--c:${esc(c)}" title="${esc((m?.name || '') + ' · ' + text + (e.by ? ' · ' + e.by : ''))}">${inner}${full ? schDel(e) : ''}</${e.url ? 'a' : 'span'}>`;
+}
+const schDel = e => Sched.mine(e) ? `<button type="button" class="sch-del" data-schdel="${esc(e.id)}" aria-label="${esc(t('list.delete'))}">${ICON.close}</button>` : '';
+const schSort = (a, b) => (!!b.time - !!a.time) || String(a.time).localeCompare(String(b.time)) || String(a.member).localeCompare(String(b.member));
+
+function renderSchedule() {
+  view.innerHTML = `
+    <header class="page-h"><span class="big">${esc(t('sch.big'))}</span><span class="ko">${esc(t('sch.ko'))}</span><p>${esc(t('sch.desc'))}</p></header>
+    <section id="sched"></section>`;
+  paintSchedule();
+}
+function paintSchedule() {
+  const box = $('#sched');
+  if (!box) return;
+  const now = new Date();
+  const [y, mo] = Sched.month || [now.getFullYear(), now.getMonth()];
+  Sched.load(y, mo);
+  const first = new Date(y, mo, 1).getDay(), days = new Date(y, mo + 1, 0).getDate();
+  const today = kstToday();
+  const all = Sched.list(y, mo).filter(e => !Sched.who || e.member === Sched.who);
+  const byDay = {};
+  all.forEach(e => (byDay[e.date] ||= []).push(e));
+  const MAX = 6;
+  let cells = '';
+  for (let i = 0; i < first; i++) cells += '<div class="sch-cd blank"></div>';
+  for (let d = 1; d <= days; d++) {
+    const iso = `${y}-${pad2(mo + 1)}-${pad2(d)}`, ev = (byDay[iso] || []).sort(schSort);
+    cells += `<div class="sch-cd ${iso === today ? 'today' : ''} ${Sched.pick === iso ? 'pick' : ''}" data-schday="${iso}">
+      <span class="n">${d}</span>
+      ${ev.slice(0, MAX).map(e => schItem(e)).join('')}
+      ${ev.length > MAX ? `<span class="sch-more">+${ev.length - MAX}</span>` : ''}
+    </div>`;
+  }
+  const pickEv = Sched.pick ? (byDay[Sched.pick] || []).sort(schSort) : [];
+  const ms = active();
+  box.innerHTML = `
+    <div class="sch-bar">
+      <button type="button" class="icon-btn" data-schmon="-1" aria-label="이전 달">${ICON.chevL}</button>
+      <b class="sch-title">${esc(t('sch.month', { y, m: mo + 1 }))}</b>
+      <button type="button" class="icon-btn" data-schmon="1" aria-label="다음 달">${ICON.chevR}</button>
+      <button type="button" class="btn sm line" data-schmon="0">${esc(t('cal.today'))}</button>
+      <div class="sch-chips">
+        <button type="button" class="chip ${Sched.who ? '' : 'on'}" data-schwho="">${esc(t('shorts.all'))}</button>
+        ${ms.map(m => `<button type="button" class="chip ${Sched.who === m.id ? 'on' : ''}" data-schwho="${esc(m.id)}" style="--c:${esc(m.color)}">${memberMark(m)}${esc(m.name)}</button>`).join('')}
+      </div>
+      ${Auth.user ? `<button type="button" class="btn sm solid" data-schform>${ICON.plus} ${esc(t('sch.add'))}</button>` : `<span class="sch-login">${esc(t('sch.login'))} <span id="schLogin"></span></span>`}
+    </div>
+    ${Sched.form && Auth.user ? schForm() : ''}
+    <div class="sch-wrap ${Sched.pick ? 'with-day' : ''}">
+      <div class="sch-cal">
+        <div class="sch-dow">${listOf('cal.days').slice(0, 7).map(x => `<span>${esc(x)}</span>`).join('')}</div>
+        <div class="sch-grid">${cells}</div>
+      </div>
+      ${Sched.pick ? `<aside class="sch-day">
+        <div class="sch-day-h"><b>${esc(t('cal.monthDay', { m: +Sched.pick.slice(5, 7), d: +Sched.pick.slice(8) }))}</b>
+          ${Auth.user ? `<button type="button" class="btn sm line" data-schform="${Sched.pick}">${ICON.plus} ${esc(t('sch.addHere'))}</button>` : ''}
+          <button type="button" class="icon-btn sm" data-schday="${Sched.pick}" aria-label="닫기">${ICON.close}</button></div>
+        <div class="sch-day-list">${pickEv.length ? pickEv.map(e => `<div class="sch-row">${schItem(e, true)}<small>${esc(Data.member(e.member)?.name || '')}${e.by ? ' · ' + esc(e.by) : ''}</small></div>`).join('') : `<p class="muted">${esc(t('sch.none'))}</p>`}</div>
+      </aside>` : ''}
+    </div>`;
+  if ($('#schLogin')) Auth.renderButton($('#schLogin'));
+}
+function schForm() {
+  const ms = Data.site.members.filter(m => !m.graduated);
+  const date = Sched.formDate || Sched.pick || kstToday();
+  return `<form class="sch-form" id="schForm">
+    <label><span>${esc(t('sch.f.date'))}</span><input type="date" name="date" value="${date}" required></label>
+    <label><span>${esc(t('sch.f.time'))}</span><input type="time" name="time"></label>
+    <label><span>${esc(t('sch.f.member'))}</span><select name="member" required>${ms.map(m => `<option value="${esc(m.id)}" ${Sched.who === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
+    <div class="sch-types"><span>${esc(t('sch.f.type'))}</span>${SCH_TYPES.map((k, i) => `<label class="chip-r"><input type="radio" name="type" value="${k}" ${i ? '' : 'checked'}><span>${esc(t('sch.type.' + k))}</span></label>`).join('')}</div>
+    <label class="grow"><span>${esc(t('sch.f.title'))}</span><input name="title" maxlength="80" placeholder="${esc(t('sch.f.titlePh'))}"></label>
+    <label class="grow"><span>${esc(t('sch.f.url'))}</span><input name="url" type="url" placeholder="https://chzzk.naver.com/…"></label>
+    <div class="sch-form-btns"><button type="button" class="btn sm line" data-schform>${esc(t('sch.cancel'))}</button><button type="submit" class="btn sm solid" ${Sched.busy ? 'disabled' : ''}>${esc(t('sch.save'))}</button></div>
+  </form>`;
+}
+
 /* ─── 노래 창 ─── */
 function renderPlay() {
   const it = Player.current();
@@ -1026,7 +1169,7 @@ function renderAbout() {
 
 /* ─── 목차 ─── */
 const NAV = [
-  ['#/', 'nav.home', 'nav.homeEn'], ['#/calendar', 'nav.calendar', 'nav.calendarEn'], ['#/listen', 'nav.listen', 'nav.listenEn'], ['#/shorts', 'nav.shorts', 'nav.shortsEn'],
+  ['#/', 'nav.home', 'nav.homeEn'], ['#/calendar', 'nav.calendar', 'nav.calendarEn'], ['#/schedule', 'nav.schedule', 'nav.scheduleEn'], ['#/listen', 'nav.listen', 'nav.listenEn'], ['#/shorts', 'nav.shorts', 'nav.shortsEn'],
   ['#/group', 'nav.group', 'nav.groupEn'], ['#/stars', 'nav.stars', 'nav.starsEn'], ['#/about', 'nav.about', 'nav.aboutEn'],
 ];
 function renderDrawer() {
@@ -1172,6 +1315,7 @@ function route(keepScroll) {
   else if (page === 'group') renderGroup(a, b);
   else if (page === 'listen') renderListen();
   else if (page === 'calendar') renderCalendarPage();
+  else if (page === 'schedule') renderSchedule();
   else if (page === 'stars') renderStars();
   else if (page === 'about') renderAbout();
   else if (page === 'play') renderPlay();
@@ -1243,6 +1387,16 @@ document.addEventListener('click', e => {
     renderListen(); ensureFoot(); return;
   }
   if (tg.closest('[data-attend]')) { Attend.check(); return; }
+  if ((el = tg.closest('[data-schmon]'))) {
+    const d = +el.dataset.schmon, now = new Date();
+    let [y, m] = Sched.month || [now.getFullYear(), now.getMonth()];
+    if (!d) [y, m] = [now.getFullYear(), now.getMonth()]; else { m += d; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } }
+    Sched.month = [y, m]; Sched.pick = ''; paintSchedule(); return;
+  }
+  if ((el = tg.closest('[data-schwho]'))) { Sched.who = el.dataset.schwho; paintSchedule(); return; }
+  if ((el = tg.closest('[data-schform]'))) { Sched.form = !Sched.form || !!el.dataset.schform; Sched.formDate = el.dataset.schform || ''; paintSchedule(); if (Sched.form) $('#schForm')?.scrollIntoView({ block: 'nearest' }); return; }
+  if ((el = tg.closest('[data-schdel]'))) { e.preventDefault(); Sched.remove(el.dataset.schdel); return; }
+  if ((el = tg.closest('[data-schday]')) && !tg.closest('a')) { Sched.pick = Sched.pick === el.dataset.schday ? '' : el.dataset.schday; paintSchedule(); return; }
   if (tg.closest('[data-myform]')) { MyCal.form = !MyCal.form; repaintCal(); if (MyCal.form) $('#myTitle')?.focus(); return; }
   if ((el = tg.closest('[data-mydel]'))) { MyCal.remove(el.dataset.mydel); return; }
   if (tg.closest('[data-fulldl]')) { Player.setFull(!Player.full); renderListen(); ensureFoot(); return; }

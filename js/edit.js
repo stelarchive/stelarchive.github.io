@@ -617,7 +617,7 @@
 
   function pages() {
     const ms = Data.site?.members || [];
-    return [['#/', '홈'], ['#/calendar', '캘린더'], ['#/listen', '노래 듣기'], ['#/group', '단체 · 합방'], ['#/stars', '별표'], ['#/shorts', '쇼츠 · 클립'], ['#/play', '노래 창'], ['#/about', 'About'],
+    return [['#/', '홈'], ['#/calendar', '캘린더'], ['#/schedule', '방송 일정'], ['#/listen', '노래 듣기'], ['#/group', '단체 · 합방'], ['#/stars', '별표'], ['#/shorts', '쇼츠 · 클립'], ['#/play', '노래 창'], ['#/about', 'About'],
       ...ms.map(m => [`#/m/${m.id}`, `멤버 · ${m.name}`])];
   }
   function paintBar() {
