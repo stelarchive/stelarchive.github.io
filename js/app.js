@@ -795,6 +795,7 @@ function renderListen() {
       <span class="chip-k">${esc(t('listen.preferNote'))}</span>
       <button type="button" class="chip ${Player.prefer === 'drive' ? 'on' : ''}" data-prefer aria-pressed="${Player.prefer === 'drive'}">${esc(t('listen.prefer'))}</button>
       <button type="button" class="chip ${Player.full ? 'on' : ''}" data-fulldl aria-pressed="${Player.full}" title="${esc(tRaw('listen.fullTitle'))}">${esc(t('listen.full'))}</button>
+      <button type="button" class="chip ${Loud.on ? 'on' : ''}" data-normvol aria-pressed="${Loud.on}" title="${esc(tRaw('listen.normTitle'))}">${esc(t('listen.norm'))}</button>
       <span class="chip-k">${esc(t('listen.coverNote'))}</span>
       ${['fanart', 'profile'].map(v => `<button type="button" class="chip ${store.get('audioCover', 'fanart') === v ? 'on' : ''}" data-cover="${v}" aria-pressed="${store.get('audioCover', 'fanart') === v}">${esc(t(v === 'fanart' ? 'listen.coverFanart' : 'listen.coverProfile'))}</button>`).join('')}
     </div>
@@ -1430,6 +1431,7 @@ document.addEventListener('click', e => {
   if ((el = tg.closest('[data-schday]')) && !tg.closest('a')) { Sched.pick = Sched.pick === el.dataset.schday ? '' : el.dataset.schday; paintSchedule(); return; }
   if (tg.closest('[data-myform]')) { MyCal.form = !MyCal.form; repaintCal(); if (MyCal.form) $('#myTitle')?.focus(); return; }
   if ((el = tg.closest('[data-mydel]'))) { MyCal.remove(el.dataset.mydel); return; }
+  if (tg.closest('[data-normvol]')) { Loud.set(!Loud.on); renderListen(); ensureFoot(); return; }
   if (tg.closest('[data-fulldl]')) { Player.setFull(!Player.full); renderListen(); ensureFoot(); return; }
   if (tg.closest('[data-clearsongs]')) { if (confirm(tRaw('listen.clearConfirm'))) SongStore.clear().then(() => { renderListen(); ensureFoot(); }); return; }
   if (tg.closest('[data-prefer]')) { Player.setPrefer(Player.prefer === 'drive' ? 'youtube' : 'drive'); renderListen(); ensureFoot(); return; }

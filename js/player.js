@@ -68,6 +68,81 @@ async function downloadFile(url, onProgress, signal, max = 400e6) {
   return new Blob(parts, { type: r.headers.get('content-type') || 'video/mp4' });
 }
 
+/* ─── 음량 맞추기 ───
+   유튜브는 곡마다 음량을 알아서 맞춰 준다(약 -14 LUFS). 드라이브 파일은 원본 그대로라 대개 더 크다.
+   받아 둔 파일의 소리 크기를 한 번 재서(LUFS, 사람 귀 기준) 기억해 두고, 유튜브와 같은 크기가 되도록 줄여서 튼다.
+   아직 안 잰 곡은 지금까지 잰 곡들의 보통 값으로 틀다가, 재고 나면 살짝 맞춘다 */
+const Loud = {
+  TARGET: -14,
+  on: store.get('normVol', true),
+  map: store.get('loud', {}), // 곡 id → LUFS
+  jobs: [], busy: false,
+  set(v) { this.on = v; store.set('normVol', v); Player.applyVol(true); },
+  gainOf(L) { return Math.min(1, Math.pow(10, (this.TARGET - L) / 20)); },
+  gain(id) {
+    if (!this.on) return 1;
+    if (this.map[id] != null) return this.gainOf(this.map[id]);
+    const g = Object.values(this.map).map(L => this.gainOf(L)).sort((a, b) => a - b);
+    return g.length ? g[g.length >> 1] : 0.6;
+  },
+  known(id) { return this.map[id] != null; },
+  measure(id, blob) {
+    if (!id || !blob || this.known(id) || this.jobs.some(j => j.id === id) || typeof OfflineAudioContext === 'undefined') return;
+    if (blob.size > 300e6) return;
+    this.jobs.push({ id, blob });
+    this.run();
+  },
+  async run() {
+    if (this.busy) return;
+    this.busy = true;
+    while (this.jobs.length) {
+      const { id, blob } = this.jobs.shift();
+      try {
+        const L = await this.analyze(blob);
+        if (isFinite(L)) {
+          this.map[id] = Math.round(L * 10) / 10;
+          store.set('loud', this.map);
+          if (Player.current()?.id === id) Player.applyVol();
+        }
+      } catch {}
+    }
+    this.busy = false;
+  },
+  // ITU BS.1770 방식: K-가중 필터 → 400ms 구간 → -70 / -10 게이트
+  async analyze(blob) {
+    const SR = 22050;
+    const audio = await new OfflineAudioContext(2, SR, SR).decodeAudioData(await blob.arrayBuffer());
+    const ch = Math.min(2, audio.numberOfChannels);
+    const off = new OfflineAudioContext(ch, audio.length, audio.sampleRate);
+    const src = off.createBufferSource();
+    src.buffer = audio;
+    const shelf = off.createBiquadFilter();
+    shelf.type = 'highshelf'; shelf.frequency.value = 1500; shelf.gain.value = 4;
+    const hp = off.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 38; hp.Q.value = 0.5;
+    src.connect(shelf).connect(hp).connect(off.destination);
+    src.start();
+    const out = await off.startRendering();
+    const data = Array.from({ length: ch }, (_, i) => out.getChannelData(i));
+    const step = Math.round(out.sampleRate * 0.1), n = out.length;
+    // 100ms 조각마다 제곱합 → 4조각씩 묶어 400ms 구간
+    const seg = [];
+    for (let s = 0; s + step <= n; s += step) {
+      let sum = 0;
+      for (const d of data) for (let i = s; i < s + step; i++) sum += d[i] * d[i];
+      seg.push(sum / step);
+    }
+    const blocks = [];
+    for (let i = 0; i + 4 <= seg.length; i++) blocks.push((seg[i] + seg[i + 1] + seg[i + 2] + seg[i + 3]) / 4);
+    const lk = z => -0.691 + 10 * Math.log10(z);
+    const abs = blocks.filter(z => z > 0 && lk(z) > -70);
+    if (!abs.length) return NaN;
+    const rel = lk(abs.reduce((a, b) => a + b, 0) / abs.length) - 10;
+    const g = abs.filter(z => lk(z) > rel);
+    return lk(g.reduce((a, b) => a + b, 0) / g.length);
+  },
+};
+
 const Player = {
   queue: [], idx: -1, label: '', shuffle: false, repeat: 'all',
   kind: '', // 'yt' | 'video' | 'frame'
@@ -253,7 +328,12 @@ const Player = {
     this.loading = null;
     const saved = await SongStore.get(it.id);
     if (this.current() !== it) return;
-    if (saved) { this.keep(it.id, saved); this.paintSource(); return this.playVideo(saved); }
+    if (saved) {
+      this.keep(it.id, saved);
+      this.paintSource();
+      if (!Loud.known(it.id)) fetch(saved).then(r => r.blob()).then(b => Loud.measure(it.id, b)).catch(() => {});
+      return this.playVideo(saved);
+    }
     this.playVideo(url);
     if (!this.full) return;
     const ctl = new AbortController();
@@ -261,6 +341,7 @@ const Player = {
     try {
       const blob = await downloadFile(url, p => { job.p = p; this.paintSource(); }, ctl.signal);
       SongStore.put(it.id, blob);
+      Loud.measure(it.id, blob);
       if (this.current() !== it || this.kind !== 'video') return;
       this.loading = null;
       const u = URL.createObjectURL(blob);
@@ -339,7 +420,7 @@ const Player = {
     const ctl = new AbortController();
     const job = (this.preJob = { id: it.id, ctl });
     downloadFile(url, null, ctl.signal)
-      .then(blob => { SongStore.put(it.id, blob); this.keep(it.id, URL.createObjectURL(blob)); job.done = true; this.paintQueue(); })
+      .then(blob => { SongStore.put(it.id, blob); Loud.measure(it.id, blob); this.keep(it.id, URL.createObjectURL(blob)); job.done = true; this.paintQueue(); })
       .catch(() => { job.failed = true; });
   },
   // 지금 곡과 다음 곡 것만 남기고 나머지는 메모리에서 비운다
@@ -412,7 +493,21 @@ const Player = {
     const it = this.current();
     if (it?.thumb && Tone.known(it) !== true) this.video.poster = it.thumb; else this.video.removeAttribute('poster');
     this.video.src = src;
+    this.applyVol(true);
     this.video.play().catch(() => {});
+  },
+  // 드라이브 곡 음량을 유튜브에 맞춘다. now=false 면 1초 동안 천천히 바꾼다
+  applyVol(now) {
+    const v = this.video, it = this.current();
+    const want = it ? Loud.gain(it.id) : 1;
+    clearInterval(this._volT);
+    if (now) { v.volume = want; return; }
+    const from = v.volume, t0 = performance.now();
+    this._volT = setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / 1000);
+      v.volume = from + (want - from) * k;
+      if (k >= 1) clearInterval(this._volT);
+    }, 50);
   },
   showFrame(it) {
     this.stopOthers('frame');
