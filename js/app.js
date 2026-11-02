@@ -907,7 +907,7 @@ const Sched = {
     paintSchedule();
   },
 };
-const memberMark = m => m ? (m.oshi ? `<span class="sch-mk">${esc(m.oshi)}</span>` : avatarHtml(m, 'av sch-av')) : `<span class="sch-mk">✦</span>`;
+const memberMark = m => m ? avatarHtml(m, 'av sch-av') : `<span class="sch-mk">✦</span>`;
 // 일정을 누르면: 따로 넣은 링크가 있으면 거기로, 없으면 그 멤버 치지직 채널로
 function schItem(e, full) {
   const m = Data.member(e.member);

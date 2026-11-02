@@ -557,11 +557,14 @@ function starfield(canvas) {
 }
 
 /* 멤버 동그라미/카드에 쓰는 그림 (이미지가 없으면 색 + 이름 첫 글자) */
+// 프로필 동그라미: 투명한 PNG 가 검게 나오지 않게 원본 그대로 받고(안 되면 썸네일로), 뒤는 멤버 색
 function avatarHtml(m, cls = 'av') {
   if (!m) return '';
-  const img = imgUrl(typeof firstSrc === 'function' ? firstSrc(m.avatar) : m.avatar, 400);
+  const src = typeof firstSrc === 'function' ? firstSrc(m.avatar) : m.avatar;
+  const img = imgUrl(src, 400), id = driveId(src);
+  const raw = id ? `https://lh3.googleusercontent.com/d/${id}=w400` : img;
   return img
-    ? `<span class="${cls}" style="--c:${esc(m.color)}"><img src="${esc(img)}" alt="" loading="lazy"></span>`
+    ? `<span class="${cls}" style="--c:${esc(m.color)}"><img src="${esc(raw)}" alt="" loading="lazy"${raw !== img ? ` onerror="this.onerror=null;this.src='${esc(img)}'"` : ''}></span>`
     : `<span class="${cls} ph" style="--c:${esc(m.color)}">${esc(m.name.slice(0, 1))}</span>`;
 }
 
