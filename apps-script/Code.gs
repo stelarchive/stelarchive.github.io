@@ -847,3 +847,18 @@ function probeStellight() {
   });
   Logger.log('주소들:\n' + Object.keys(found).slice(0, 80).join('\n'));
 }
+
+/* stellight.fans 조사 2: API 주소 끝부분을 찾고, 그럴듯한 주소들을 실제로 불러 본다 */
+function probeStellight2() {
+  const get = u => { try { const r = UrlFetchApp.fetch(u, { muteHttpExceptions: true, headers: { Accept: 'application/json' } }); return { code: r.getResponseCode(), text: r.getContentText() }; } catch (e) { return { code: 0, text: String(e) }; } };
+  const js = get('https://stellight.fans/assets/index-D5lgs5Cd.js').text;
+  const paths = {};
+  // $axios.get("/..."), .get(`/...`), "/schedules" 같은 글자를 모은다
+  (js.match(/\.(?:get|post)\(\s*["'`]\/[^"'`]{1,80}["'`]/g) || []).forEach(s => paths[s] = 1);
+  (js.match(/["'`]\/(?:schedules?|streams?|members?|talents?|events?|calendar)[^"'`]{0,60}["'`]/gi) || []).forEach(s => paths[s] = 1);
+  Logger.log('찾은 주소 조각:\n' + Object.keys(paths).slice(0, 60).join('\n'));
+  ['schedules', 'schedule', 'schedules?page=1', 'members', 'streamers', 'talents', 'events'].forEach(p => {
+    const r = get('https://stellight.fans/api/v1/' + p);
+    Logger.log('/api/v1/' + p + ' → ' + r.code + ' · ' + r.text.slice(0, 700).replace(/\s+/g, ' '));
+  });
+}
