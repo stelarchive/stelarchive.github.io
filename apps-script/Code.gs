@@ -826,3 +826,24 @@ function scheduleFor_(month) {
   cache.put('sch_' + month, JSON.stringify(out), 300);
   return out;
 }
+
+/* ─── stellight.fans 조사 (한 번만 돌려 보는 용도) ───
+   그 사이트가 방송 일정 데이터를 어디서 받아오는지 찾는다. 결과 로그를 복사해서 보내 주면 된다 */
+function probeStellight() {
+  const base = 'https://stellight.fans/';
+  const get = u => { try { const r = UrlFetchApp.fetch(u, { muteHttpExceptions: true, followRedirects: true }); return { code: r.getResponseCode(), text: r.getContentText() }; } catch (e) { return { code: 0, text: String(e) }; } };
+  const home = get(base);
+  Logger.log('홈: ' + home.code + ' · ' + home.text.length + '자');
+  const scripts = (home.text.match(/<script[^>]+src="([^"]+)"/g) || []).map(s => s.match(/src="([^"]+)"/)[1]).map(s => s.startsWith('http') ? s : base + s.replace(/^\//, ''));
+  Logger.log('스크립트: ' + scripts.join(' , '));
+  const found = {};
+  scripts.slice(0, 8).forEach(u => {
+    const js = get(u).text;
+    (js.match(/https?:\/\/[A-Za-z0-9.\-]+(?:\/[A-Za-z0-9_\-./?=&%]*)?/g) || []).forEach(x => { if (!/w3\.org|reactjs|github\.com\/facebook|mozilla/.test(x)) found[x] = 1; });
+    ['firebase', 'firestore', 'supabase', 'projectId', 'apiKey', 'schedule', 'spreadsheets', 'sheets.googleapis', '/api/'].forEach(k => {
+      let i = js.indexOf(k), n = 0;
+      while (i >= 0 && n < 3) { Logger.log(k + ' ▸ ' + js.slice(Math.max(0, i - 80), i + 120).replace(/\s+/g, ' ')); i = js.indexOf(k, i + 1); n++; }
+    });
+  });
+  Logger.log('주소들:\n' + Object.keys(found).slice(0, 80).join('\n'));
+}
