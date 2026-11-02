@@ -908,14 +908,14 @@ const Sched = {
   },
 };
 const memberMark = m => m ? (m.oshi ? `<span class="sch-mk">${esc(m.oshi)}</span>` : avatarHtml(m, 'av sch-av')) : `<span class="sch-mk">✦</span>`;
+// 일정을 누르면: 따로 넣은 링크가 있으면 거기로, 없으면 그 멤버 치지직 채널로
 function schItem(e, full) {
   const m = Data.member(e.member);
   const c = m?.color || 'var(--accent)';
   const text = (e.time ? e.time + ' ' : '') + Sched.label(e);
-  const inner = `${memberMark(m)}<span class="sch-tx">${esc(text)}</span>`;
-  return e.time
-    ? `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'span'} class="sch-ev timed" style="--c:${esc(c)}" title="${esc((m?.name || '') + ' · ' + text + (e.by ? ' · ' + e.by : ''))}">${inner}${full ? schDel(e) : ''}</${e.url ? 'a' : 'span'}>`
-    : `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'span'} class="sch-ev allday" style="--c:${esc(c)}" title="${esc((m?.name || '') + ' · ' + text + (e.by ? ' · ' + e.by : ''))}">${inner}${full ? schDel(e) : ''}</${e.url ? 'a' : 'span'}>`;
+  const href = e.url || m?.links?.chzzk || '';
+  const tag = href ? `a href="${esc(href)}" target="_blank" rel="noopener"` : 'span';
+  return `<${tag} class="sch-ev ${e.time ? 'timed' : 'allday'}" style="--c:${esc(c)}" title="${esc((m?.name || '') + ' · ' + text + (e.by ? ' · ' + e.by : '') + (href ? ' · ' + tRaw('sch.go') : ''))}">${memberMark(m)}<span class="sch-tx">${esc(text)}</span>${full ? schDel(e) : ''}</${href ? 'a' : 'span'}>`;
 }
 const schDel = e => Sched.mine(e) ? `<button type="button" class="sch-del" data-schdel="${esc(e.id)}" aria-label="${esc(t('list.delete'))}">${ICON.close}</button>` : '';
 const schSort = (a, b) => (!!b.time - !!a.time) || String(a.time).localeCompare(String(b.time)) || String(a.member).localeCompare(String(b.member));
@@ -1004,7 +1004,7 @@ function schForm() {
     <label><span>${esc(t('sch.f.member'))}</span><select name="member" required>${ms.map(m => `<option value="${esc(m.id)}" ${Sched.who === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
     <div class="sch-types"><span>${esc(t('sch.f.type'))}</span>${SCH_TYPES.map((k, i) => `<label class="chip-r"><input type="radio" name="type" value="${k}" ${i ? '' : 'checked'}><span>${esc(t('sch.type.' + k))}</span></label>`).join('')}</div>
     <label class="grow"><span>${esc(t('sch.f.title'))}</span><input name="title" maxlength="80" placeholder="${esc(t('sch.f.titlePh'))}"></label>
-    <label class="grow"><span>${esc(t('sch.f.url'))}</span><input name="url" type="url" placeholder="https://chzzk.naver.com/…"></label>
+    <label class="grow"><span>${esc(t('sch.f.url'))}</span><input name="url" type="url" placeholder="${esc(t('sch.f.urlPh'))}"></label>
     <div class="sch-form-btns"><button type="button" class="btn sm line" data-schform>${esc(t('sch.cancel'))}</button><button type="submit" class="btn sm solid" ${Sched.busy ? 'disabled' : ''}>${esc(t('sch.save'))}</button></div>
   </form>`;
 }
