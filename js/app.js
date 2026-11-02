@@ -861,6 +861,7 @@ const SCH_TYPES = ['live', 'plan', 'off', 'song', 'etc'];
 const Sched = {
   months: {}, // 'yyyy-mm' → [{id, date, time, member, type, title, url, by, hash}]
   month: null, pick: '', who: '', form: false, busy: false,
+  view: store.get('schView', 'week'), week: null, // 주 보기: 그 주 일요일 'yyyy-mm-dd'
   key(y, m) { return `${y}-${pad2(m + 1)}`; },
   async load(y, m, force) {
     const k = this.key(y, m);
@@ -925,36 +926,54 @@ function renderSchedule() {
     <section id="sched"></section>`;
   paintSchedule();
 }
+// 날짜 계산 도우미 (한국 날짜 문자열 기준)
+const isoAdd = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const isoSunday = iso => isoAdd(iso, -new Date(iso + 'T00:00:00Z').getUTCDay());
 function paintSchedule() {
   const box = $('#sched');
   if (!box) return;
-  const now = new Date();
-  const [y, mo] = Sched.month || [now.getFullYear(), now.getMonth()];
-  Sched.load(y, mo);
-  const first = new Date(y, mo, 1).getDay(), days = new Date(y, mo + 1, 0).getDate();
   const today = kstToday();
-  const all = Sched.list(y, mo).filter(e => !Sched.who || e.member === Sched.who);
+  const week = Sched.view === 'week';
+  let isoDays, title, lead = 0;
+  if (week) {
+    const start = Sched.week || isoSunday(today);
+    isoDays = Array.from({ length: 7 }, (_, i) => isoAdd(start, i));
+    const [a, z] = [isoDays[0], isoDays[6]];
+    title = a.slice(0, 7) === z.slice(0, 7) ? tRaw('sch.weekT', { m: +a.slice(5, 7), a: +a.slice(8), b: +z.slice(8) }) : tRaw('sch.weekT2', { m: +a.slice(5, 7), a: +a.slice(8), m2: +z.slice(5, 7), b: +z.slice(8) });
+  } else {
+    const now = new Date();
+    const [y, mo] = Sched.month || [now.getFullYear(), now.getMonth()];
+    lead = new Date(y, mo, 1).getDay();
+    isoDays = Array.from({ length: new Date(y, mo + 1, 0).getDate() }, (_, i) => `${y}-${pad2(mo + 1)}-${pad2(i + 1)}`);
+    title = tRaw('sch.month', { y, m: mo + 1 });
+  }
+  // 걸친 달을 다 불러온다
+  [...new Set(isoDays.map(d => d.slice(0, 7)))].forEach(k => Sched.load(+k.slice(0, 4), +k.slice(5) - 1));
   const byDay = {};
-  all.forEach(e => (byDay[e.date] ||= []).push(e));
-  const MAX = 6;
+  isoDays.forEach(d => (byDay[d] = []));
+  Object.values(Sched.months).flat().forEach(e => { if (byDay[e.date] && (!Sched.who || e.member === Sched.who)) byDay[e.date].push(e); });
+  const MAX = week ? 99 : 6;
+  const dows = listOf('cal.days').slice(0, 7);
   let cells = '';
-  for (let i = 0; i < first; i++) cells += '<div class="sch-cd blank"></div>';
-  for (let d = 1; d <= days; d++) {
-    const iso = `${y}-${pad2(mo + 1)}-${pad2(d)}`, ev = (byDay[iso] || []).sort(schSort);
+  for (let i = 0; i < lead; i++) cells += '<div class="sch-cd blank"></div>';
+  isoDays.forEach((iso, i) => {
+    const ev = byDay[iso].sort(schSort);
     cells += `<div class="sch-cd ${iso === today ? 'today' : ''} ${Sched.pick === iso ? 'pick' : ''}" data-schday="${iso}">
-      <span class="n">${d}</span>
+      <span class="n">${+iso.slice(8)}</span>
       ${ev.slice(0, MAX).map(e => schItem(e)).join('')}
       ${ev.length > MAX ? `<span class="sch-more">+${ev.length - MAX}</span>` : ''}
+      ${week && !ev.length ? `<span class="sch-empty">—</span>` : ''}
     </div>`;
-  }
-  const pickEv = Sched.pick ? (byDay[Sched.pick] || []).sort(schSort) : [];
+  });
+  const pickEv = Sched.pick ? (byDay[Sched.pick] || Object.values(Sched.months).flat().filter(e => e.date === Sched.pick && (!Sched.who || e.member === Sched.who))).sort(schSort) : [];
   const ms = active();
   box.innerHTML = `
     <div class="sch-bar">
-      <button type="button" class="icon-btn" data-schmon="-1" aria-label="이전 달">${ICON.chevL}</button>
-      <b class="sch-title">${esc(t('sch.month', { y, m: mo + 1 }))}</b>
-      <button type="button" class="icon-btn" data-schmon="1" aria-label="다음 달">${ICON.chevR}</button>
+      <button type="button" class="icon-btn" data-schmon="-1" aria-label="이전">${ICON.chevL}</button>
+      <b class="sch-title">${esc(title)}</b>
+      <button type="button" class="icon-btn" data-schmon="1" aria-label="다음">${ICON.chevR}</button>
       <button type="button" class="btn sm line" data-schmon="0">${esc(t('cal.today'))}</button>
+      <div class="sch-views"><button type="button" class="${week ? 'on' : ''}" data-schview="week">${esc(t('sch.week'))}</button><button type="button" class="${week ? '' : 'on'}" data-schview="month">${esc(t('sch.monthV'))}</button></div>
       <div class="sch-chips">
         <button type="button" class="chip ${Sched.who ? '' : 'on'}" data-schwho="">${esc(t('shorts.all'))}</button>
         ${ms.map(m => `<button type="button" class="chip ${Sched.who === m.id ? 'on' : ''}" data-schwho="${esc(m.id)}" style="--c:${esc(m.color)}">${memberMark(m)}${esc(m.name)}</button>`).join('')}
@@ -963,8 +982,8 @@ function paintSchedule() {
     </div>
     ${Sched.form && Auth.user ? schForm() : ''}
     <div class="sch-wrap ${Sched.pick ? 'with-day' : ''}">
-      <div class="sch-cal">
-        <div class="sch-dow">${listOf('cal.days').slice(0, 7).map(x => `<span>${esc(x)}</span>`).join('')}</div>
+      <div class="sch-cal ${week ? 'sch-week' : ''}">
+        <div class="sch-dow">${(week ? isoDays.map((d, i) => `${dows[i]} <b>${+d.slice(5, 7)}/${+d.slice(8)}</b>`) : dows).map(x => `<span>${week ? x : esc(x)}</span>`).join('')}</div>
         <div class="sch-grid">${cells}</div>
       </div>
       ${Sched.pick ? `<aside class="sch-day">
@@ -1389,9 +1408,20 @@ document.addEventListener('click', e => {
   if (tg.closest('[data-attend]')) { Attend.check(); return; }
   if ((el = tg.closest('[data-schmon]'))) {
     const d = +el.dataset.schmon, now = new Date();
-    let [y, m] = Sched.month || [now.getFullYear(), now.getMonth()];
-    if (!d) [y, m] = [now.getFullYear(), now.getMonth()]; else { m += d; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } }
-    Sched.month = [y, m]; Sched.pick = ''; paintSchedule(); return;
+    if (Sched.view === 'week') Sched.week = d ? isoAdd(Sched.week || isoSunday(kstToday()), 7 * d) : null;
+    else {
+      let [y, m] = Sched.month || [now.getFullYear(), now.getMonth()];
+      if (!d) [y, m] = [now.getFullYear(), now.getMonth()]; else { m += d; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } }
+      Sched.month = [y, m];
+    }
+    Sched.pick = ''; paintSchedule(); return;
+  }
+  if ((el = tg.closest('[data-schview]'))) {
+    Sched.view = el.dataset.schview; store.set('schView', Sched.view);
+    // 보던 날짜 근처로 맞춘다
+    if (Sched.view === 'week' && Sched.month) { const [y, m] = Sched.month; Sched.week = isoSunday(`${y}-${pad2(m + 1)}-01`); }
+    if (Sched.view === 'month' && Sched.week) Sched.month = [+Sched.week.slice(0, 4), +Sched.week.slice(5, 7) - 1];
+    Sched.pick = ''; paintSchedule(); return;
   }
   if ((el = tg.closest('[data-schwho]'))) { Sched.who = el.dataset.schwho; paintSchedule(); return; }
   if ((el = tg.closest('[data-schform]'))) { Sched.form = !Sched.form || !!el.dataset.schform; Sched.formDate = el.dataset.schform || ''; paintSchedule(); if (Sched.form) $('#schForm')?.scrollIntoView({ block: 'nearest' }); return; }

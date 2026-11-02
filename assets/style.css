@@ -1105,3 +1105,20 @@ body.cm-open .sh-nav { display: none; }
 
 .sch-btn { margin-top: 10px; justify-content: center; gap: 8px; }
 .sch-btn svg { width: 16px; height: 16px; }
+
+/* 방송 일정: 주 보기 (칸을 크게, 글자를 다 보이게) */
+.sch-views { display: inline-flex; border: 1px solid var(--line2); border-radius: 999px; overflow: hidden; }
+.sch-views button { padding: 6px 14px; font-size: 13px; color: var(--dim); }
+.sch-views button.on { background: var(--btn); color: var(--btn-fg); }
+.sch-week .sch-dow span b { font-weight: 400; margin-left: 4px; color: var(--fg); }
+.sch-week .sch-cd { min-height: max(420px, calc(100vh - 380px)); gap: 6px; padding: 8px; }
+.sch-week .sch-ev { font-size: 13px; align-items: flex-start; }
+.sch-week .sch-tx { white-space: normal; overflow: visible; line-height: 1.35; }
+.sch-week .sch-ev.allday .sch-tx { padding: 2px 7px; }
+.sch-week .sch-ev .sch-mk, .sch-week .sch-ev .sch-av { margin-top: 1px; }
+.sch-empty { color: var(--line2); font-size: 12px; padding-left: 4px; }
+@media (max-width: 820px) {
+  .sch-week .sch-cd { min-height: 280px; }
+  .sch-week .sch-ev .sch-tx { display: block; font-size: 10px; }
+  .sch-week .sch-ev.allday::after { display: none; }
+}
