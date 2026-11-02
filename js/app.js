@@ -635,9 +635,9 @@ function calendarHtml(big) {
         <button type="button" class="icon-btn" data-cal="1" aria-label="다음 달">${ICON.chevR}</button>
         <button type="button" class="btn sm line" data-cal="0">${esc(t('cal.today'))}</button>
       </div>
+      <a class="btn solid sch-btn" href="#/schedule">${ICON.play.replace('M7 4.5v15l13-7.5z', 'M4 6h16v14H4zM4 10h16M9 3v4M15 3v4').replace('fill="currentColor"', 'fill="none" stroke="currentColor" stroke-width="2"')} ${esc(t('sch.link'))}</a>
       ${attendHtml()}
       ${myCalHtml()}
-      <a class="sch-link" href="#/schedule">${esc(t('sch.link'))} ${ICON.chevR}</a>
       <h3>${state.calPick ? esc(t('cal.monthDay', { m: +state.calPick.split('-')[1] + 1, d: state.calPick.split('-')[2] })) : esc(t('cal.upcoming'))}</h3>
       ${list.length ? `<ul class="up-list">${list.map(e => `<li class="${e.type === 'birthday' ? 'up-bd' : e.type === 'mine' ? 'up-mine' : ''}" style="${e.color ? `--c:${esc(e.color)}` : ''}">
         <span class="d">${state.calPick ? `${e.d.getMonth() + 1}/${e.d.getDate()}` : dday(e.d)}</span>

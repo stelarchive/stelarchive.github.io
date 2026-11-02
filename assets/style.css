@@ -1102,3 +1102,6 @@ body.cm-open .sh-nav { display: none; }
   .sch-ev.allday, .sch-ev.timed { border-left-width: 2px; }
   .sch-ev.allday::after { content: ''; flex: 1; height: 4px; border-radius: 2px; background: var(--c); }
 }
+
+.sch-btn { margin-top: 10px; justify-content: center; gap: 8px; }
+.sch-btn svg { width: 16px; height: 16px; }
