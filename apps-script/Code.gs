@@ -621,7 +621,11 @@ function editCache_(fn) {
 
 /* 드라이브 목록을 10분마다 미리 읽어 둔다 — 파일이 많아도 사이트가 바로 뜨게.
    setup() 이 걸어 두고, 따로 돌려도 된다 (여러 번 돌려도 하나만 걸린다) */
-function warmCache() { buildItems_(); } // 다 읽은 뒤에 갈아 끼우니 읽는 동안에도 사이트는 빠르다
+function warmCache() {
+  buildItems_(); // 다 읽은 뒤에 갈아 끼우니 읽는 동안에도 사이트는 빠르다
+  // stellight.fans 방송 일정은 1시간마다 가져온다
+  if (Date.now() - Number(props.getProperty('SL_AT') || 0) > 55 * 60e3) { try { syncStellight(); } catch (e) { Logger.log('stellight: ' + e.message); } }
+}
 function installWarm() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'warmCache').forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('warmCache').timeBased().everyMinutes(10).create();
@@ -822,43 +826,75 @@ function scheduleFor_(month) {
   if (!/^\d{4}-\d{2}$/.test(month)) return [];
   const cache = CacheService.getScriptCache(), hit = cache.get('sch_' + month);
   if (hit) return JSON.parse(hit);
-  const out = schSheet_().getDataRange().getValues().slice(1).map(schRow_).filter(e => e.date.indexOf(month) === 0);
+  const own = schSheet_().getDataRange().getValues().slice(1).map(schRow_).filter(e => e.date.indexOf(month) === 0);
+  // stellight.fans 에서 가져온 일정을 합친다 (우리 쪽에 같은 멤버·날짜·시간 일정이 있으면 그걸 쓴다)
+  const seen = {};
+  own.forEach(e => { seen[e.member + e.date + e.time] = 1; });
+  const ext = stellightEvents_().filter(e => e.date.indexOf(month) === 0 && !seen[e.member + e.date + e.time]);
+  const out = own.concat(ext);
   cache.put('sch_' + month, JSON.stringify(out), 300);
   return out;
 }
 
-/* ─── stellight.fans 조사 (한 번만 돌려 보는 용도) ───
-   그 사이트가 방송 일정 데이터를 어디서 받아오는지 찾는다. 결과 로그를 복사해서 보내 주면 된다 */
-function probeStellight() {
-  const base = 'https://stellight.fans/';
-  const get = u => { try { const r = UrlFetchApp.fetch(u, { muteHttpExceptions: true, followRedirects: true }); return { code: r.getResponseCode(), text: r.getContentText() }; } catch (e) { return { code: 0, text: String(e) }; } };
-  const home = get(base);
-  Logger.log('홈: ' + home.code + ' · ' + home.text.length + '자');
-  const scripts = (home.text.match(/<script[^>]+src="([^"]+)"/g) || []).map(s => s.match(/src="([^"]+)"/)[1]).map(s => s.startsWith('http') ? s : base + s.replace(/^\//, ''));
-  Logger.log('스크립트: ' + scripts.join(' , '));
-  const found = {};
-  scripts.slice(0, 8).forEach(u => {
-    const js = get(u).text;
-    (js.match(/https?:\/\/[A-Za-z0-9.\-]+(?:\/[A-Za-z0-9_\-./?=&%]*)?/g) || []).forEach(x => { if (!/w3\.org|reactjs|github\.com\/facebook|mozilla/.test(x)) found[x] = 1; });
-    ['firebase', 'firestore', 'supabase', 'projectId', 'apiKey', 'schedule', 'spreadsheets', 'sheets.googleapis', '/api/'].forEach(k => {
-      let i = js.indexOf(k), n = 0;
-      while (i >= 0 && n < 3) { Logger.log(k + ' ▸ ' + js.slice(Math.max(0, i - 80), i + 120).replace(/\s+/g, ' ')); i = js.indexOf(k, i + 1); n++; }
-    });
+/* ─── stellight.fans 방송 일정 가져오기 ───
+   팬들이 적는 공개 일정(https://stellight.fans/api/v1/schedules)을 최근 40일 ~ 앞으로 60일만 가져와 _사이트/stellight.json 에 둔다.
+   warmCache 가 1시간마다 부르고, 편집기에서 syncStellight 를 직접 돌려도 된다 */
+const SL_API = 'https://stellight.fans/api/v1/schedules';
+function syncStellight() {
+  const site = readSite_();
+  const byName = {};
+  site.members.forEach(m => [m.fullName, m.name].concat(NAME_ALIASES[m.id] || []).filter(Boolean).forEach(n => { byName[n.replace(/\s+/g, '')] = m.id; }));
+  const from = Utilities.formatDate(new Date(Date.now() - 40 * 864e5), 'Asia/Seoul', 'yyyy-MM-dd');
+  const to = Utilities.formatDate(new Date(Date.now() + 60 * 864e5), 'Asia/Seoul', 'yyyy-MM-dd');
+  const get = q => JSON.parse(UrlFetchApp.fetch(SL_API + q, { muteHttpExceptions: true, headers: { Accept: 'application/json' } }).getContentText());
+  // 최신순으로 받아 보고, 정렬이 안 먹으면 마지막 쪽부터 거꾸로 읽는다
+  let rows = [];
+  let page = get('?size=500&sort=startDateTime,desc&page=0');
+  const newestFirst = (page.content || []).length && String(page.content[0].startDateTime).slice(0, 10) >= from;
+  if (newestFirst) {
+    for (let p = 0; p < 10; p++) {
+      if (p) page = get('?size=500&sort=startDateTime,desc&page=' + p);
+      const c = page.content || [];
+      rows = rows.concat(c);
+      if (!c.length || String(c[c.length - 1].startDateTime).slice(0, 10) < from || page.last) break;
+    }
+  } else {
+    const size = (page.size || (page.content || []).length || 20);
+    const total = page.totalPages || 1;
+    for (let p = total - 1, n = 0; p >= 0 && n < 40; p--, n++) {
+      const c = (get('?size=' + size + '&page=' + p).content || []);
+      rows = rows.concat(c);
+      if (c.length && c.every(r => String(r.startDateTime).slice(0, 10) < from)) break;
+    }
+  }
+  const out = [];
+  rows.forEach(r => {
+    const dt = String(r.startDateTime || '');
+    const date = dt.slice(0, 10);
+    if (date < from || date > to) return;
+    const member = byName[String(r.stellarNameKor || '').replace(/\s+/g, '')];
+    if (!member) return;
+    const title = String(r.title || '').trim() + (r.remark ? ' · ' + String(r.remark).trim() : '');
+    out.push({ id: 'sl_' + r.id, date: date, time: r.isFixedTime ? dt.slice(11, 16) : '', member: member,
+      type: /휴방/.test(title) ? 'off' : /노래|가라오케|커버/.test(title) ? 'song' : r.isFixedTime ? 'live' : 'plan',
+      title: title.slice(0, 120), url: '', by: 'stellight.fans', src: 'sl' });
   });
-  Logger.log('주소들:\n' + Object.keys(found).slice(0, 80).join('\n'));
+  const json = JSON.stringify(out);
+  const folder = sysFolder_(), it = folder.getFilesByName('stellight.json');
+  if (it.hasNext()) it.next().setContent(json); else folder.createFile('stellight.json', json, 'application/json');
+  props.setProperty('SL_AT', String(Date.now()));
+  const cache = CacheService.getScriptCache();
+  cache.remove('sl_events');
+  const months = {};
+  out.forEach(e => { months['sch_' + e.date.slice(0, 7)] = 1; });
+  cache.removeAll(Object.keys(months));
+  Logger.log('stellight 일정 ' + out.length + '개 가져옴 (받은 줄 ' + rows.length + ')');
 }
-
-/* stellight.fans 조사 2: API 주소 끝부분을 찾고, 그럴듯한 주소들을 실제로 불러 본다 */
-function probeStellight2() {
-  const get = u => { try { const r = UrlFetchApp.fetch(u, { muteHttpExceptions: true, headers: { Accept: 'application/json' } }); return { code: r.getResponseCode(), text: r.getContentText() }; } catch (e) { return { code: 0, text: String(e) }; } };
-  const js = get('https://stellight.fans/assets/index-D5lgs5Cd.js').text;
-  const paths = {};
-  // $axios.get("/..."), .get(`/...`), "/schedules" 같은 글자를 모은다
-  (js.match(/\.(?:get|post)\(\s*["'`]\/[^"'`]{1,80}["'`]/g) || []).forEach(s => paths[s] = 1);
-  (js.match(/["'`]\/(?:schedules?|streams?|members?|talents?|events?|calendar)[^"'`]{0,60}["'`]/gi) || []).forEach(s => paths[s] = 1);
-  Logger.log('찾은 주소 조각:\n' + Object.keys(paths).slice(0, 60).join('\n'));
-  ['schedules', 'schedule', 'schedules?page=1', 'members', 'streamers', 'talents', 'events'].forEach(p => {
-    const r = get('https://stellight.fans/api/v1/' + p);
-    Logger.log('/api/v1/' + p + ' → ' + r.code + ' · ' + r.text.slice(0, 700).replace(/\s+/g, ' '));
-  });
+function stellightEvents_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('sl_events');
+  if (hit) return JSON.parse(hit);
+  const it = sysFolder_().getFilesByName('stellight.json');
+  const list = it.hasNext() ? JSON.parse(it.next().getBlob().getDataAsString() || '[]') : [];
+  try { cache.put('sl_events', JSON.stringify(list), 3600); } catch (e) {}
+  return list;
 }

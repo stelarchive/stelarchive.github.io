@@ -1126,3 +1126,6 @@ body.cm-open .sh-nav { display: none; }
 a.sch-ev { cursor: pointer; }
 a.sch-ev:hover .sch-tx { text-decoration: underline; text-underline-offset: 2px; }
 a.sch-ev.allday:hover .sch-tx { text-decoration: none; filter: brightness(1.08); }
+
+.sch-src { font-size: 12px; color: var(--dim); margin-top: -40px; }
+.sch-src b { color: var(--fg); }

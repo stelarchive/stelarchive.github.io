@@ -917,13 +917,14 @@ function schItem(e, full) {
   const tag = href ? `a href="${esc(href)}" target="_blank" rel="noopener"` : 'span';
   return `<${tag} class="sch-ev ${e.time ? 'timed' : 'allday'}" style="--c:${esc(c)}" title="${esc((m?.name || '') + ' · ' + text + (e.by ? ' · ' + e.by : '') + (href ? ' · ' + tRaw('sch.go') : ''))}">${memberMark(m)}<span class="sch-tx">${esc(text)}</span>${full ? schDel(e) : ''}</${href ? 'a' : 'span'}>`;
 }
-const schDel = e => Sched.mine(e) ? `<button type="button" class="sch-del" data-schdel="${esc(e.id)}" aria-label="${esc(t('list.delete'))}">${ICON.close}</button>` : '';
+const schDel = e => e.src !== 'sl' && Sched.mine(e) ? `<button type="button" class="sch-del" data-schdel="${esc(e.id)}" aria-label="${esc(t('list.delete'))}">${ICON.close}</button>` : '';
 const schSort = (a, b) => (!!b.time - !!a.time) || String(a.time).localeCompare(String(b.time)) || String(a.member).localeCompare(String(b.member));
 
 function renderSchedule() {
   view.innerHTML = `
     <header class="page-h"><span class="big">${esc(t('sch.big'))}</span><span class="ko">${esc(t('sch.ko'))}</span><p>${esc(t('sch.desc'))}</p></header>
-    <section id="sched"></section>`;
+    <section id="sched"></section>
+    <p class="sch-src">${th('sch.source')}</p>`;
   paintSchedule();
 }
 // 날짜 계산 도우미 (한국 날짜 문자열 기준)
