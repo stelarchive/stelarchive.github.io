@@ -562,7 +562,7 @@ function avatarHtml(m, cls = 'av') {
   if (!m) return '';
   const src = typeof firstSrc === 'function' ? firstSrc(m.avatar) : m.avatar;
   const img = imgUrl(src, 400), id = driveId(src);
-  const raw = id ? `https://lh3.googleusercontent.com/d/${id}=w400` : img;
+  const raw = id && CFG.driveApiKey ? `https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true&key=${CFG.driveApiKey}` : img;
   return img
     ? `<span class="${cls}" style="--c:${esc(m.color)}"><img src="${esc(raw)}" alt="" loading="lazy"${raw !== img ? ` onerror="this.onerror=null;this.src='${esc(img)}'"` : ''}></span>`
     : `<span class="${cls} ph" style="--c:${esc(m.color)}">${esc(m.name.slice(0, 1))}</span>`;
