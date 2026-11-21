@@ -194,7 +194,7 @@ const Player = {
       if (a === 'toggle') this.toggle();
       if (a === 'next') this.next();
       if (a === 'prev') this.prev();
-      if (a === 'shuffle') { this.shuffle = !this.shuffle; this.paintModes(); }
+      if (a === 'shuffle') { this.shuffle = !this.shuffle; this.resetRound(); this.paintModes(); }
       if (a === 'repeat') { this.repeat = { all: 'one', one: 'off', off: 'all' }[this.repeat]; this.paintModes(); }
       if (a === 'fav') { const it = this.current(); if (it) Favs.toggle(it.id); }
       if (a === 'view') this.setView(this.view === 'big' ? 'mini' : 'big');
@@ -239,6 +239,7 @@ const Player = {
     const list = items.filter(i => i.playable);
     if (!list.length) { toast(tRaw('player.noSongs')); return; }
     this.queue = list;
+    this.played = new Set(); this.hist = [];
     this.label = stripMarks(label || '');
     let i = startId ? list.findIndex(x => x.id === startId) : 0;
     if (i < 0) i = 0;
@@ -301,6 +302,7 @@ const Player = {
     if (!this.queue.length) return;
     this.idx = (i + this.queue.length) % this.queue.length;
     const it = this.current();
+    this.played.add(it.id);
     this.tried = new Set();
     this.nextIdx = null;
     this.netTries = 0;
@@ -391,15 +393,25 @@ const Player = {
   next(auto) {
     if (!this.queue.length) return;
     if (auto && this.repeat === 'one') return this.go(this.idx);
-    if (this.shuffle && this.queue.length > 1) return this.go(this.shuffleNext());
+    if (this.shuffle && this.queue.length > 1) {
+      if (auto && this.repeat === 'off' && !this.left().length) return this.setPlaying(false); // 한 바퀴 다 들었다
+      this.hist.push(this.idx);
+      return this.go(this.shuffleNext());
+    }
     if (auto && this.repeat === 'off' && this.idx === this.queue.length - 1) return this.setPlaying(false);
     this.go(this.idx + 1);
   },
-  // 랜덤이어도 다음 곡을 미리 정해 둔다 (그래야 미리 받을 수 있다)
+  /* 랜덤: 목록을 한 바퀴 다 돌 때까지 같은 곡은 다시 안 나온다 (다 들으면 새 바퀴).
+     다음 곡은 미리 정해 둔다 (그래야 미리 받을 수 있다) */
+  played: new Set(), hist: [],
+  left() { return this.queue.map((x, i) => i).filter(i => i !== this.idx && !this.played.has(this.queue[i].id)); },
+  resetRound() { this.played = new Set(this.current() ? [this.current().id] : []); this.nextIdx = null; },
   shuffleNext() {
-    if (this.nextIdx == null || this.nextIdx === this.idx || this.nextIdx >= this.queue.length) {
-      let n; do n = Math.floor(Math.random() * this.queue.length); while (n === this.idx);
-      this.nextIdx = n;
+    const ok = this.nextIdx != null && this.nextIdx !== this.idx && this.nextIdx < this.queue.length && !this.played.has(this.queue[this.nextIdx].id);
+    if (!ok) {
+      let pool = this.left();
+      if (!pool.length) { this.resetRound(); pool = this.left(); } // 한 바퀴 끝 → 새로 섞는다
+      this.nextIdx = pool[Math.floor(Math.random() * pool.length)];
     }
     return this.nextIdx;
   },
@@ -456,6 +468,7 @@ const Player = {
 
   prev() {
     if (this.position() > 4) return this.seekTo(0);
+    if (this.shuffle && this.hist.length) return this.go(this.hist.pop()); // 랜덤일 땐 방금 들은 곡으로
     this.go(this.idx - 1);
   },
   ended() { this.next(true); },
