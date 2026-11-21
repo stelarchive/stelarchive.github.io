@@ -167,6 +167,18 @@ const ACTIONS = {
     const site = readSite_();
     const members = cleanMembers_(b.members, site);
     if (!members.length && !b.group) throw new Error('멤버를 하나 이상 골라야 한다');
+    // 우리 드라이브 안에 이미 있는 파일 링크면 링크를 따로 만들지 않고 그 파일을 바로 정리한다
+    // (안 그러면 같은 곡이 두 번 나오고, 공개 공유가 꺼져 있어 사이트에서 바로 재생이 안 된다)
+    const own = ownFile_(url);
+    if (own && !own.file.getDescription()) {
+      sharePublic_(own.file);
+      const meta = { title: (b.title || '').trim() || own.file.getName().replace(/\.[^.]+$/, ''), members: members, group: b.group || '', byEmail: u.email, byName: u.name };
+      own.file.setDescription(JSON.stringify(meta));
+      const item = fileItem_(own.file, own.kind || b.kind, meta, site);
+      editCache_(list => [item].concat(list.filter(x => x.id !== item.id)));
+      return { item: item };
+    }
+    if (own) throw new Error('이미 사이트에 올라가 있는 드라이브 파일이다');
     const id = 'l_' + Utilities.getUuid().slice(0, 12);
     const at = new Date().toISOString();
     const alt = String(b.alt || '').trim(); // 같은 노래의 드라이브 파일 (유튜브가 막힌 곳에서 대신 튼다)
@@ -788,6 +800,26 @@ function myRow_(r) {
 }
 
 /* 드라이브에 직접 넣은 파일을 사이트 파일로 받아들인다 */
+/* 링크가 우리 드라이브(사이트 폴더) 안의 파일이면 { file, kind } — 아니면 null */
+function ownFile_(url) {
+  const m = String(url).match(/(?:\/d\/|[?&]id=)([\w-]{20,})/);
+  if (!m) return null;
+  let file;
+  try { file = DriveApp.getFileById(m[1]); } catch (e) { return null; }
+  const rootId = props.getProperty('ROOT_ID');
+  const kindByName = {};
+  Object.keys(KINDS).forEach(k => { kindByName[KINDS[k]] = k; });
+  let kind = '';
+  let ps = file.getParents();
+  for (let depth = 0; depth < 5 && ps.hasNext(); depth++) {
+    const f = ps.next();
+    if (depth === 0) kind = kindByName[f.getName()] || '';
+    if (f.getId() === rootId) return { file: file, kind: kind };
+    ps = f.getParents();
+  }
+  return null;
+}
+
 function adopt_(file, base) {
   try { sharePublic_(file); } catch (e) { Logger.log('공유 실패: ' + file.getName() + ' — ' + e.message); return; }
   try {

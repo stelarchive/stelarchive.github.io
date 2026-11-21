@@ -88,7 +88,7 @@ const Loud = {
   known(id) { return this.map[id] != null; },
   measure(id, blob) {
     if (!id || !blob || this.known(id) || this.jobs.some(j => j.id === id) || typeof OfflineAudioContext === 'undefined') return;
-    if (blob.size > 300e6) return;
+    if (blob.size > 150e6) return; // 1시간짜리 같은 긴 파일은 풀면 메모리를 너무 먹는다
     this.jobs.push({ id, blob });
     this.run();
   },
@@ -169,6 +169,18 @@ const Player = {
           this.video.src = src;
           this.video.play().catch(() => {});
         }, 1500 * this.netTries);
+        return;
+      }
+      // 방금 올린 파일은 드라이브가 공개 공유를 퍼뜨리는 데 잠깐 걸린다 → 몇 번 더 기다렸다 다시 해 본다
+      const src = this.video.getAttribute('src');
+      if (it.driveId && !src.startsWith('blob:') && (this.waitTries || 0) < 4) {
+        this.waitTries = (this.waitTries || 0) + 1;
+        if (this.waitTries === 1) toast(tRaw('player.driveWait'));
+        setTimeout(() => {
+          if (this.current() !== it || this.kind !== 'video') return;
+          this.video.src = src.replace(/&t=\d+$/, '') + '&t=' + Date.now();
+          this.video.play().catch(() => {});
+        }, 4000 * this.waitTries);
         return;
       }
       if (it.ytId && !this.tried.has('youtube')) return this.failover(tRaw('player.driveError'));
@@ -292,6 +304,7 @@ const Player = {
     this.tried = new Set();
     this.nextIdx = null;
     this.netTries = 0;
+    this.waitTries = 0;
     this.lastPos = 0;
     this.paintNow(it);
     this.paintQueue();

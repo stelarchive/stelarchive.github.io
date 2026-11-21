@@ -207,7 +207,10 @@ const Data = {
   set(site, items) {
     site.groups ||= []; site.members ||= []; site.events ||= []; site.banner ||= {};
     this.site = site;
-    this.items = (items || []).map(enrich);
+    const all = (items || []).map(enrich);
+    // 드라이브에 직접 넣고 그 링크도 따로 올린 경우: 같은 파일이 두 번 나오지 않게 링크 쪽을 뺀다
+    const files = new Set(all.filter(x => x.src === 'drive').map(x => x.id));
+    this.items = all.filter(x => x.src === 'drive' || !x.driveId || x.ytId || !files.has(x.driveId));
     audioThumbs(this.items, site);
     this.emit();
   },
