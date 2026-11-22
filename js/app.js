@@ -845,9 +845,17 @@ function renderStars() {
   view.innerHTML = `
     <header class="page-h"><span class="big">${esc(t('stars.big'))}</span><span class="ko">${esc(t('stars.ko'))}</span><p>${Auth.user ? esc(t('stars.login', { name: Auth.user.name })) : esc(t('stars.local'))}</p></header>
     ${items.length ? '' : `<div class="empty"><div class="empty-star">${ICON.sparkle}</div><p>${esc(t('stars.empty'))}</p></div>`}
-    ${music.length ? `<section><div class="sec-h"><span class="ko">${esc(t('stars.music'))}</span></div>${itemsBlock('cover', music, t('stars.ko'))}</section>` : ''}
+    ${music.length ? `<section><div class="sec-h"><span class="ko">${esc(t('stars.music'))}</span></div>${starDlRow(music)}${itemsBlock('cover', music, t('stars.ko'))}</section>` : ''}
     ${clips.length ? `<section><div class="sec-h" style="margin-bottom:16px"><span class="ko">${esc(t('stars.clips'))}</span></div>${clipGrid(clips)}</section>` : ''}
     ${arts.length ? `<section><div class="sec-h" style="margin-bottom:16px"><span class="ko">${esc(t('stars.arts'))}</span></div>${imageGrid(arts)}</section>` : ''}`;
+}
+
+// 별표한 노래 mp3 로 받기 버튼
+function starDlRow(music) {
+  const { ok, no } = StarDL.split(music);
+  if (!ok.length) return '';
+  return `<div class="dl-row"><button type="button" class="btn sm" data-dlstars>${ICON.download} ${esc(t('dl.btn', { n: ok.length }))}</button>
+    <small>${esc(t('dl.note'))}${no.length ? ' ' + esc(t('dl.ytOnly', { n: no.length })) : ''}</small></div>`;
 }
 
 function renderCalendarPage() {
@@ -1431,6 +1439,7 @@ document.addEventListener('click', e => {
   if ((el = tg.closest('[data-schday]')) && !tg.closest('a')) { Sched.pick = Sched.pick === el.dataset.schday ? '' : el.dataset.schday; paintSchedule(); return; }
   if (tg.closest('[data-myform]')) { MyCal.form = !MyCal.form; repaintCal(); if (MyCal.form) $('#myTitle')?.focus(); return; }
   if ((el = tg.closest('[data-mydel]'))) { MyCal.remove(el.dataset.mydel); return; }
+  if (tg.closest('[data-dlstars]')) { StarDL.run(Data.items.filter(i => Favs.has(i.id) && KIND[i.kind]?.music)); return; }
   if (tg.closest('[data-normvol]')) { Loud.set(!Loud.on); renderListen(); ensureFoot(); return; }
   if (tg.closest('[data-fulldl]')) { Player.setFull(!Player.full); renderListen(); ensureFoot(); return; }
   if (tg.closest('[data-clearsongs]')) { if (confirm(tRaw('listen.clearConfirm'))) SongStore.clear().then(() => { renderListen(); ensureFoot(); }); return; }

@@ -1129,3 +1129,17 @@ a.sch-ev.allday:hover .sch-tx { text-decoration: none; filter: brightness(1.08);
 
 .sch-src { font-size: 12px; color: var(--dim); margin-top: -40px; }
 .sch-src b { color: var(--fg); }
+
+/* 별표 mp3 받기 */
+.dl-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: -4px 0 16px; }
+.dl-row .btn svg { width: 15px; height: 15px; vertical-align: -3px; }
+.dl-row small { color: var(--mute); font-size: 12px; }
+#dlBox { position: fixed; right: 16px; bottom: calc(16px + var(--player-h, 0px)); z-index: 90; width: min(320px, calc(100vw - 32px));
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25); display: grid; gap: 6px; }
+body.has-player #dlBox { bottom: 96px; }
+#dlBox .dl-t { font-weight: 700; font-size: 13px; }
+#dlBox .dl-s { font-size: 12px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#dlBox .dl-bar { height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+#dlBox .dl-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+#dlBox .btn { justify-self: end; }
