@@ -1,6 +1,6 @@
 /* 오프라인 플레이어를 인터넷 없이도 열 수 있게, 페이지 파일을 저장해 두는 일꾼.
    이 폴더(/offline/) 안에서만 일한다 — 원래 사이트에는 손대지 않는다 */
-const SHELL = 'stl-offline-shell-v3';
+const SHELL = 'stl-offline-shell-v4';
 const FILES = ['./', './index.html', './icon.svg', './manifest.webmanifest'];
 
 self.addEventListener('install', e => {

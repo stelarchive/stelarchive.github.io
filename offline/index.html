@@ -287,17 +287,19 @@ async function importFiles(fileList) {
     const files = await expand([...fileList]);
     const songs = files.filter(f => isAudio(f.name));
     if (!songs.length) return toast('넣을 노래 파일이 없어요');
-    const m3u = files.find(f => /\.m3u8?$/i.test(f.name));
+    const m3us = files.filter(f => /\.m3u8?$/i.test(f.name)); // zip 여러 개로 나눠 받았으면 목록도 여러 개
     // 사이트에서 받은 zip 이면 곡마다 멤버 이름 · 고유 색이 들어 있다
     let meta = new Map();
-    const mj = files.find(f => /stellive\.json$/i.test(f.name));
-    if (mj) try { meta = new Map((JSON.parse(await mj.blob.text()).tracks || []).map(t => [t.file, t])); } catch {}
+    for (const mj of files.filter(f => /stellive\.json$/i.test(f.name)))
+      try { (JSON.parse(await mj.blob.text()).tracks || []).forEach(t => meta.set(t.file, t)); } catch {}
     let order = [];
-    if (m3u) {
+    if (m3us.length) {
       const byName = new Map(songs.map(s => [s.name, s]));
-      const entries = parseM3u(await m3u.blob.text());
+      const entries = [];
+      for (const m of m3us) entries.push(...parseM3u(await m.blob.text()));
       for (const e of entries) { const s = byName.get(e.file); if (s) { order.push({ ...s, info: e.info }); byName.delete(e.file); } }
       order.push(...byName.values()); // 목록에 없는 파일은 뒤에
+      if (m3us.length > 1) order.sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true })); // 나눠 받은 zip 은 번호 순서대로
     } else order = songs.sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }));
     stop();
     MEM.clear();

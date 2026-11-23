@@ -26,9 +26,7 @@ const StarDL = {
     if (saved) { const b = await fetch(saved).then(r => r.blob()); URL.revokeObjectURL(saved); return b; }
     const url = Player.fileUrl(it);
     if (!url) throw new Error('no file');
-    const b = await downloadFile(url, p => this.paint({ step: 'get', p }), signal, max);
-    SongStore.put(it.id, b);
-    return b;
+    return downloadFile(url, p => this.paint({ step: 'get', p }), signal, max); // 한꺼번에 받을 땐 노래 저장소에 안 넣는다 (디스크 · 메모리 아끼기)
   },
 
   // 파일 → 소리 → mp3
@@ -84,61 +82,113 @@ const StarDL = {
     return { artists: ms.map(m => m.name), colors };
   },
 
+  /* 저장할 곳
+     크롬 · 크롬북: 고른 폴더에 한 곡씩 바로 쓴다 → 메모리를 한 곡만큼만 쓴다 (26곡 · 몇 GB 여도 안 멈춘다)
+     폴더 저장이 안 되는 브라우저: 400MB 씩 나눠 zip 여러 개로 받는다 */
+  PART: 400e6,
+  async sink(fmt) {
+    const d = new Date(), stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+    const base = `stellive-stars-${fmt === 'mp4' ? 'mp4-' : ''}${stamp}`;
+    if (window.showDirectoryPicker) {
+      const root = await showDirectoryPicker({ id: 'stl-stars', mode: 'readwrite', startIn: 'music' });
+      let dir, name = base, n = 1;
+      for (;;) { // 같은 이름 폴더가 있으면 -2, -3 …
+        try { await root.getDirectoryHandle(name); name = `${base}-${++n}`; }
+        catch { dir = await root.getDirectoryHandle(name, { create: true }); break; }
+      }
+      return {
+        folder: name,
+        async put(file, blob) {
+          const h = await dir.getFileHandle(file, { create: true });
+          const w = await h.createWritable();
+          try { await w.write(blob); await w.close(); } catch (e) { await w.abort?.().catch(() => {}); throw e; }
+        },
+        async finish(m3u, meta) { await this.put('playlist.m3u8', new Blob([m3u])); await this.put('stellive.json', new Blob([meta])); return 1; },
+      };
+    }
+    await this.loadLibs();
+    const self = this;
+    let zip = new JSZip(), size = 0, part = 0, files = [];
+    const save = async (m3uOf, metaOf) => {
+      part++;
+      zip.file('playlist.m3u8', m3uOf(files));
+      zip.file('stellive.json', metaOf(files));
+      self.paint({ step: 'zip' });
+      const out = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(out);
+      a.download = `${base}-${part}.zip`;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60e3);
+      zip = new JSZip(); size = 0; files = [];
+    };
+    return {
+      async put(file, blob, m3uOf, metaOf) {
+        if (files.length && size + blob.size > self.PART) await save(m3uOf, metaOf);
+        zip.file(file, blob, { binary: true, compression: 'STORE' });
+        size += blob.size; files.push(file);
+      },
+      async finish(m3uAll, metaAll, m3uOf, metaOf) { if (files.length) await save(m3uOf, metaOf); return part; },
+    };
+  },
+
   // fmt: 'mp3' (소리만 mp3 로 바꿈) | 'mp4' (원본 파일 그대로 · 영상 포함)
   async run(items, fmt = 'mp3') {
     if (this.busy) return;
     this.fmt = fmt;
-    const { ok, no } = this.split(items);
+    const { ok } = this.split(items);
     if (!ok.length) return toast(tRaw('dl.none'), true);
+    let out;
+    // 폴더 고르기 창은 버튼을 누른 바로 그때 열어야 한다 (다른 걸 기다리면 브라우저가 막는다)
+    try { out = await this.sink(fmt); }
+    catch (e) { if (e.name !== 'AbortError') toast(tRaw('dl.fail'), true); return; }
     this.busy = true;
     this.ctl = new AbortController();
     this.list = ok; this.i = 0; this.skipped = [];
     this.paint({ step: 'start' });
     try {
-      await this.loadLibs();
-      const zip = new JSZip(), m3u = ['#EXTM3U'], used = new Set(), tracks = [];
+      const used = new Set(), tracks = [];
       const album = tRaw('dl.album');
+      const line = t => `#EXTINF:-1,${t.artists.length ? t.artists.join(', ') + ' - ' : ''}${t.title}\r\n${t.file}`;
+      const m3uOf = files => '#EXTM3U\r\n' + tracks.filter(t => !files || files.includes(t.file)).map(line).join('\r\n') + '\r\n';
+      const metaOf = files => JSON.stringify({ v: 1, made: new Date().toISOString(), tracks: tracks.filter(t => !files || files.includes(t.file)) }, null, 1);
       for (this.i = 0; this.i < ok.length; this.i++) {
         const it = ok[this.i];
         if (this.ctl.signal.aborted) throw new DOMException('stop', 'AbortError');
         this.paint({ step: 'get', p: 0 });
+        let pushed = false;
         try {
           const max = fmt === 'mp4' ? 400e6 : this.MAX;
-          const blob = await this.fileOf(it, this.ctl.signal, max);
+          let blob = await this.fileOf(it, this.ctl.signal, max);
           if (blob.size > max) throw new Error('big');
           const who = this.people(it);
-          const artist = who.artists.join(', ');
           let name = this.safe(`${String(this.i + 1).padStart(2, '0')} ${it.title}`);
           while (used.has(name)) name += '_';
           used.add(name);
           let file;
-          if (fmt === 'mp4') {
-            file = name + '.' + this.extOf(blob, it);
-            zip.file(file, blob, { binary: true, compression: 'STORE' });
-          } else {
+          if (fmt === 'mp4') file = name + '.' + this.extOf(blob, it);
+          else {
             const mp3 = await this.toMp3(blob);
             file = name + '.mp3';
-            zip.file(file, new Blob([this.id3(it.title || name, artist, album), mp3]), { binary: true, compression: 'STORE' });
+            blob = new Blob([this.id3(it.title || name, who.artists.join(', '), album), mp3], { type: 'audio/mpeg' });
           }
-          m3u.push(`#EXTINF:-1,${artist ? artist + ' - ' : ''}${it.title}`, file);
+          this.paint({ step: 'save' });
           tracks.push({ file, title: it.title, artists: who.artists, colors: who.colors });
+          pushed = true;
+          await out.put(file, blob, m3uOf, metaOf);
+          blob = null;
         } catch (e) {
           if (e.name === 'AbortError') throw e;
+          if (pushed) tracks.pop();
+          console.warn('[받기] 건너뜀:', it.title, e);
           this.skipped.push(it.title);
         }
       }
-      if (m3u.length === 1) throw new Error('empty');
-      zip.file('playlist.m3u8', m3u.join('\r\n') + '\r\n');
-      zip.file('stellive.json', JSON.stringify({ v: 1, made: new Date().toISOString(), tracks }, null, 1));
-      this.paint({ step: 'zip' });
-      const out = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-      const d = new Date();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(out);
-      a.download = `stellive-stars-${fmt === 'mp4' ? 'mp4-' : ''}${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.zip`;
-      document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60e3);
-      this.done(tRaw('dl.done', { n: m3u.length / 2 | 0 }) + (this.skipped.length ? ' ' + tRaw('dl.skipped', { n: this.skipped.length }) : ''));
+      if (!tracks.length) throw new Error('empty');
+      const parts = await out.finish(m3uOf(), metaOf(), m3uOf, metaOf);
+      const n = tracks.length;
+      const msg = out.folder ? tRaw('dl.doneFolder', { n, folder: out.folder }) : parts > 1 ? tRaw('dl.doneParts', { n, parts }) : tRaw('dl.done', { n });
+      this.done(msg + (this.skipped.length ? ' ' + tRaw('dl.skipped', { n: this.skipped.length }) : ''));
     } catch (e) {
       this.done(e.name === 'AbortError' ? tRaw('dl.stopped') : tRaw('dl.fail'), e.name !== 'AbortError');
     }
@@ -161,8 +211,8 @@ const StarDL = {
     }
     const it = this.list?.[this.i];
     const n = this.list?.length || 0;
-    const step = s.step === 'get' ? tRaw('dl.get') : s.step === 'enc' ? tRaw('dl.enc') : s.step === 'zip' ? tRaw('dl.zip') : tRaw('dl.prep');
-    const frac = s.step === 'zip' ? 1 : n ? (this.i + (s.step === 'enc' ? 0.3 + 0.7 * (s.p || 0) : 0.3 * (s.p || 0))) / n : 0;
+    const step = s.step === 'get' ? tRaw('dl.get') : s.step === 'enc' ? tRaw('dl.enc') : s.step === 'zip' ? tRaw('dl.zip') : s.step === 'save' ? tRaw('dl.save') : tRaw('dl.prep');
+    const frac = s.step === 'zip' ? 1 : s.step === 'save' ? (this.i + 1) / n : n ? (this.i + (s.step === 'enc' ? 0.3 + 0.7 * (s.p || 0) : 0.3 * (s.p || 0))) / n : 0;
     $('.dl-t', box).textContent = s.step === 'zip' ? step : `${Math.min(this.i + 1, n)} / ${n} · ${step}`;
     $('.dl-s', box).textContent = s.step === 'zip' ? '' : it?.title || '';
     $('.dl-bar i', box).style.width = Math.round(frac * 100) + '%';
