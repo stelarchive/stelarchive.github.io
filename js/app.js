@@ -855,6 +855,7 @@ function starDlRow(music) {
   const { ok, no } = StarDL.split(music);
   if (!ok.length) return '';
   return `<div class="dl-row"><button type="button" class="btn sm" data-dlstars>${ICON.download} ${esc(t('dl.btn', { n: ok.length }))}</button>
+    <button type="button" class="btn sm" data-dlstars="mp4" title="${esc(tRaw('dl.mp4Title'))}">${ICON.download} ${esc(t('dl.btnMp4'))}</button>
     <a class="btn sm" href="offline/">${esc(t('dl.offline'))}</a>
     <small>${esc(t('dl.note'))}${no.length ? ' ' + esc(t('dl.ytOnly', { n: no.length })) : ''}</small></div>`;
 }
@@ -1440,7 +1441,7 @@ document.addEventListener('click', e => {
   if ((el = tg.closest('[data-schday]')) && !tg.closest('a')) { Sched.pick = Sched.pick === el.dataset.schday ? '' : el.dataset.schday; paintSchedule(); return; }
   if (tg.closest('[data-myform]')) { MyCal.form = !MyCal.form; repaintCal(); if (MyCal.form) $('#myTitle')?.focus(); return; }
   if ((el = tg.closest('[data-mydel]'))) { MyCal.remove(el.dataset.mydel); return; }
-  if (tg.closest('[data-dlstars]')) { StarDL.run(Data.items.filter(i => Favs.has(i.id) && KIND[i.kind]?.music)); return; }
+  if (tg.closest('[data-dlstars]')) { StarDL.run(Data.items.filter(i => Favs.has(i.id) && KIND[i.kind]?.music), tg.closest('[data-dlstars]').dataset.dlstars || 'mp3'); return; }
   if (tg.closest('[data-normvol]')) { Loud.set(!Loud.on); renderListen(); ensureFoot(); return; }
   if (tg.closest('[data-fulldl]')) { Player.setFull(!Player.full); renderListen(); ensureFoot(); return; }
   if (tg.closest('[data-clearsongs]')) { if (confirm(tRaw('listen.clearConfirm'))) SongStore.clear().then(() => { renderListen(); ensureFoot(); }); return; }

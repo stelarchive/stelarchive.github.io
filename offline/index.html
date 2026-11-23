@@ -48,7 +48,8 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); }
-body { font-variation-settings: 'opsz' 10; transition: background .3s, color .3s; }
+body { font-variation-settings: 'opsz' 10; transition: color .3s; background: transparent; }
+html { transition: background .3s; }
 header { position: relative; }
 .sky { position: fixed; inset: 0 0 auto 0; height: 340px; background: var(--sky); opacity: .35; pointer-events: none; z-index: -1; -webkit-mask: linear-gradient(#000, transparent); mask: linear-gradient(#000, transparent); }
 body { min-height: 100vh; padding: 0 16px 140px; }
@@ -99,6 +100,25 @@ li.now b { color: var(--accent); font-weight: 700; }
 .toast { position: fixed; left: 50%; bottom: 130px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s; max-width: calc(100vw - 32px); text-align: center; }
 .toast.show { opacity: 1; }
 .back { color: var(--mute); font-size: 12px; text-decoration: none; }
+/* 멤버 고유 색 배경 — 사이트 노래 창과 같은 방식 */
+#glow { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+#glow i { position: absolute; inset: -12%; opacity: 0; transition: opacity 1.4s ease; filter: blur(50px); }
+#glow i.show { opacity: .55; }
+[data-theme="lavender"] #glow i.show, [data-theme="white"] #glow i.show { opacity: .75; }
+.stage { margin: 0 0 22px; border-radius: 16px; overflow: hidden; background: #000; position: relative; aspect-ratio: 16 / 9; max-height: 52vh; width: 100%; box-shadow: 0 18px 50px rgba(0,0,0,.25); }
+.stage[hidden] { display: none; }
+.stage video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.stage .cover { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: #fff; }
+.stage .cover b { font-family: var(--batang); font-size: clamp(20px, 4vw, 30px); text-shadow: 0 2px 16px rgba(0,0,0,.35); display: block; }
+.stage .cover span { font-size: 13px; opacity: .9; margin-top: 8px; display: block; }
+.stage.video .cover { display: none; }
+li .tt .cd, .cd { display: inline-flex; gap: 3px; margin: 0 6px 0 0; vertical-align: 0; }
+.cd i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 1px rgba(255,255,255,.25); }
+li .tag { font-size: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; margin-left: 6px; color: var(--mute); vertical-align: 1px; }
+.drop.small { padding: 12px 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; text-align: left; }
+.drop.small b { font-size: 13px; margin: 0; flex: 1; min-width: 200px; }
+.drop.small small { display: none; }
+.drop.small .btns { margin: 0; }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .dots { display: inline-flex; align-items: center; gap: 10px; }
 .dot { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(128,120,200,.6); padding: 0; transition: box-shadow .2s, transform .2s; }
@@ -111,6 +131,7 @@ li.now b { color: var(--accent); font-weight: 700; }
 </head>
 <body>
 <div class="sky" aria-hidden="true"></div>
+<div id="glow" aria-hidden="true"><i></i><i></i></div>
 <div class="wrap">
   <header>
     <div class="top"><a class="back" href="https://stelarchive.github.io/#/stars">← 사이트로 돌아가기</a>
@@ -134,6 +155,8 @@ li.now b { color: var(--accent); font-weight: 700; }
     <input type="file" id="dirIn" webkitdirectory hidden>
   </div>
 
+  <div class="stage" id="stage" hidden><video id="au" playsinline preload="auto"></video><div class="cover" id="cover"></div></div>
+
   <div class="bar-h">
     <span class="t" id="listT">목록</span>
     <button class="btn" id="install" hidden>앱으로 설치</button>
@@ -156,7 +179,6 @@ li.now b { color: var(--accent); font-weight: 700; }
   </div>
 </div>
 <div class="toast" id="toast"></div>
-<audio id="au" preload="auto"></audio>
 
 <script>/* JSZip 3.10.1 (MIT) — zip 풀기용. 파일 하나로도 돌게 그대로 넣어 둔다 */
 /*!
@@ -241,8 +263,8 @@ function parseM3u(text) {
   return out;
 }
 const baseName = p => p.split(/[\\/]/).pop();
-const isAudio = n => /\.(mp3|m4a|aac|ogg|opus|wav|flac|mp4)$/i.test(n);
-const mimeOf = n => ({ mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac', mp4: 'video/mp4' }[n.split('.').pop().toLowerCase()] || 'audio/mpeg');
+const isAudio = n => /\.(mp3|m4a|aac|ogg|opus|wav|flac|mp4|webm|mov)$/i.test(n);
+const mimeOf = n => ({ mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime' }[n.split('.').pop().toLowerCase()] || 'audio/mpeg');
 
 // files: [{ name, blob }]  (zip 은 먼저 풀어서 넘긴다)
 async function expand(fileList) {
@@ -250,7 +272,7 @@ async function expand(fileList) {
   for (const f of fileList) {
     if (/\.zip$/i.test(f.name)) {
       const zip = await JSZip.loadAsync(f);
-      const entries = Object.values(zip.files).filter(z => !z.dir && (isAudio(z.name) || /\.m3u8?$/i.test(z.name)));
+      const entries = Object.values(zip.files).filter(z => !z.dir && (isAudio(z.name) || /\.m3u8?$/i.test(z.name) || /stellive\.json$/i.test(z.name)));
       for (const z of entries) out.push({ name: baseName(z.name), blob: new Blob([await z.async('arraybuffer')], { type: mimeOf(z.name) }) });
     } else out.push({ name: baseName(f.webkitRelativePath || f.name), blob: f });
   }
@@ -266,6 +288,10 @@ async function importFiles(fileList) {
     const songs = files.filter(f => isAudio(f.name));
     if (!songs.length) return toast('넣을 노래 파일이 없어요');
     const m3u = files.find(f => /\.m3u8?$/i.test(f.name));
+    // 사이트에서 받은 zip 이면 곡마다 멤버 이름 · 고유 색이 들어 있다
+    let meta = new Map();
+    const mj = files.find(f => /stellive\.json$/i.test(f.name));
+    if (mj) try { meta = new Map((JSON.parse(await mj.blob.text()).tracks || []).map(t => [t.file, t])); } catch {}
     let order = [];
     if (m3u) {
       const byName = new Map(songs.map(s => [s.name, s]));
@@ -281,8 +307,11 @@ async function importFiles(fileList) {
     for (let i = 0; i < order.length; i++) {
       const s = order[i], key = `/__track/${i}`;
       await c.put(key, new Response(s.blob, { headers: { 'content-type': s.blob.type || mimeOf(s.name) } }));
-      const [artist, title] = splitInfo(s.info, s.name);
-      list.push({ key, title, artist, size: s.blob.size });
+      let [artist, title] = splitInfo(s.info, s.name);
+      const m = meta.get(s.name);
+      if (m) { title = m.title || title; artist = (m.artists || []).join(', ') || artist; }
+      const colors = (m?.colors || []).filter(c => /^#[0-9a-f]{3,8}$/i.test(c));
+      list.push({ key, title, artist, colors, video: /^video\//.test(s.blob.type || mimeOf(s.name)), size: s.blob.size });
     }
     S.list = list; S.idx = -1; S.played = new Set(); S.hist = [];
     if (CAN_SAVE) { store.set('stlOffList', list); store.set('stlOffIdx', -1); }
@@ -334,6 +363,7 @@ async function go(i, autoplay = true) {
   au.src = S.url;
   if (autoplay) au.play().catch(() => {});
   paint();
+  paintStage(t);
   if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: 'STELLIVE' });
 }
 function stop() { au.pause(); au.removeAttribute('src'); au.load(); if (S.url) URL.revokeObjectURL(S.url); S.url = ''; }
@@ -378,6 +408,41 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
 });
 
+/* ── 멤버 색 배경 · 화면 ── */
+function glowPaint(cs) {
+  const mix = (c, n) => `color-mix(in srgb, ${c} ${n}%, transparent)`;
+  if (cs.length === 1) {
+    const c = cs[0];
+    return `radial-gradient(60% 70% at 32% 40%, ${mix(c, 95)}, transparent 75%), radial-gradient(55% 60% at 80% 72%, ${mix(c, 80)}, transparent 75%), linear-gradient(160deg, ${mix(c, 55)}, ${mix(c, 35)})`;
+  }
+  const spots = [[25, 30], [78, 28], [70, 78], [22, 76], [50, 50], [90, 52], [10, 50]];
+  const blobs = cs.slice(0, 7).map((c, i) => `radial-gradient(48% 55% at ${spots[i][0]}% ${spots[i][1]}%, ${mix(c, 90)}, transparent 72%)`);
+  return [...blobs, `linear-gradient(120deg, ${cs.map(c => mix(c, 45)).join(', ')})`].join(', ');
+}
+let glowKey = '';
+function setGlow(cs) {
+  const key = cs.join(',');
+  if (key === glowKey) return;
+  glowKey = key;
+  const [a, b] = document.querySelectorAll('#glow i');
+  const next = a.classList.contains('show') ? b : a, prev = next === a ? b : a;
+  if (cs.length) { next.style.backgroundImage = glowPaint(cs); next.classList.add('show'); }
+  prev.classList.remove('show');
+}
+function paintStage(t) {
+  const st = $('stage');
+  st.hidden = !t;
+  if (!t) return setGlow([]);
+  const cs = t.colors?.length ? t.colors : [];
+  setGlow(cs);
+  st.classList.toggle('video', !!t.video);
+  // mp3 는 영상이 없으니 멤버 색 화면에 제목을 띄운다
+  const bg = cs.length ? (cs.length === 1 ? `linear-gradient(140deg, ${cs[0]}, color-mix(in srgb, ${cs[0]} 55%, #000))` : `linear-gradient(120deg, ${cs.join(', ')})`) : 'linear-gradient(140deg, var(--accent), var(--wall))';
+  $('cover').style.background = bg;
+  $('cover').innerHTML = `<div><b>${esc(t.title)}</b>${t.artist ? `<span>${esc(t.artist)}</span>` : ''}</div>`;
+}
+const dots = cs => cs?.length ? `<span class="cd">${cs.slice(0, 5).map(c => `<i style="background:${c}"></i>`).join('')}</span>` : '';
+
 /* ── 그리기 ── */
 function paintCtl() {
   $('play').innerHTML = au.paused ? ICON.play : ICON.pause;
@@ -391,9 +456,11 @@ function paint() {
   $('listT').innerHTML = `목록 <small>${S.list.length}곡${S.list.length ? ` · ${mb.toFixed(0)}MB` : ''}</small>`;
   $('list').innerHTML = S.list.length ? S.list.map((t, i) => `<li data-i="${i}" class="${i === S.idx ? 'now' : ''}">
       <span class="n">${i === S.idx ? '▶' : i + 1}</span>
-      <span class="tt"><b>${esc(t.title)}</b>${t.artist ? `<span>${esc(t.artist)}</span>` : ''}</span><span class="d"></span></li>`).join('')
+      <span class="tt"><b>${esc(t.title)}</b>${t.artist || t.colors?.length ? `<span>${dots(t.colors)}${esc(t.artist || '')}</span>` : ''}</span><span class="d">${t.video ? '<span class="tag">영상</span>' : ''}</span></li>`).join('')
     : '<div class="empty">아직 넣은 노래가 없어요. 위에서 zip을 넣어 주세요.</div>';
   $('player').hidden = !S.list.length;
+  $('drop').classList.toggle('small', S.list.length > 0);
+  if (!S.list.length) paintStage(null);
   const t = S.list[S.idx];
   $('nowT').innerHTML = t ? `${esc(t.title)}${t.artist ? `<small>${esc(t.artist)}</small>` : ''}` : '재생할 곡을 골라 주세요';
   paintCtl();

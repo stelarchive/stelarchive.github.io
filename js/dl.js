@@ -21,12 +21,12 @@ const StarDL = {
     return one('js/vendor/jszip.min.js', () => typeof JSZip !== 'undefined');
   },
 
-  async fileOf(it, signal) {
+  async fileOf(it, signal, max = this.MAX) {
     const saved = await SongStore.get(it.id);
     if (saved) { const b = await fetch(saved).then(r => r.blob()); URL.revokeObjectURL(saved); return b; }
     const url = Player.fileUrl(it);
     if (!url) throw new Error('no file');
-    const b = await downloadFile(url, p => this.paint({ step: 'get', p }), signal, this.MAX);
+    const b = await downloadFile(url, p => this.paint({ step: 'get', p }), signal, max);
     SongStore.put(it.id, b);
     return b;
   },
@@ -65,8 +65,29 @@ const StarDL = {
 
   safe(s) { return String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90) || 'song'; },
 
-  async run(items) {
+  // 원본 파일 확장자
+  extOf(blob, it) {
+    const t = blob.type || '';
+    if (/mpeg/.test(t)) return 'mp3';
+    if (/audio\/mp4|m4a/.test(t)) return 'm4a';
+    if (/webm/.test(t)) return 'webm';
+    if (/quicktime/.test(t)) return 'mov';
+    if (/ogg/.test(t)) return 'ogg';
+    if (/wav/.test(t)) return 'wav';
+    return it.media === 'audio' ? 'mp3' : 'mp4';
+  },
+  // 곡마다 부른 멤버 이름 · 고유 색 (오프라인 플레이어가 배경 색을 칠할 때 쓴다)
+  people(it) {
+    const ms = it.members.map(id => Data.member(id)).filter(Boolean);
+    let colors = [...new Set(ms.map(m => m.color).filter(Boolean))];
+    if (!colors.length && it.group && it.group !== 'all') colors = [Data.group(it.group)?.color].filter(Boolean);
+    return { artists: ms.map(m => m.name), colors };
+  },
+
+  // fmt: 'mp3' (소리만 mp3 로 바꿈) | 'mp4' (원본 파일 그대로 · 영상 포함)
+  async run(items, fmt = 'mp3') {
     if (this.busy) return;
+    this.fmt = fmt;
     const { ok, no } = this.split(items);
     if (!ok.length) return toast(tRaw('dl.none'), true);
     this.busy = true;
@@ -75,22 +96,32 @@ const StarDL = {
     this.paint({ step: 'start' });
     try {
       await this.loadLibs();
-      const zip = new JSZip(), m3u = ['#EXTM3U'], used = new Set();
+      const zip = new JSZip(), m3u = ['#EXTM3U'], used = new Set(), tracks = [];
       const album = tRaw('dl.album');
       for (this.i = 0; this.i < ok.length; this.i++) {
         const it = ok[this.i];
         if (this.ctl.signal.aborted) throw new DOMException('stop', 'AbortError');
         this.paint({ step: 'get', p: 0 });
         try {
-          const blob = await this.fileOf(it, this.ctl.signal);
-          if (blob.size > this.MAX) throw new Error('big');
-          const mp3 = await this.toMp3(blob);
-          const artist = it.members.map(id => Data.member(id)?.name).filter(Boolean).join(', ');
+          const max = fmt === 'mp4' ? 400e6 : this.MAX;
+          const blob = await this.fileOf(it, this.ctl.signal, max);
+          if (blob.size > max) throw new Error('big');
+          const who = this.people(it);
+          const artist = who.artists.join(', ');
           let name = this.safe(`${String(this.i + 1).padStart(2, '0')} ${it.title}`);
           while (used.has(name)) name += '_';
           used.add(name);
-          zip.file(name + '.mp3', new Blob([this.id3(it.title || name, artist, album), mp3]), { binary: true, compression: 'STORE' });
-          m3u.push(`#EXTINF:-1,${artist ? artist + ' - ' : ''}${it.title}`, name + '.mp3');
+          let file;
+          if (fmt === 'mp4') {
+            file = name + '.' + this.extOf(blob, it);
+            zip.file(file, blob, { binary: true, compression: 'STORE' });
+          } else {
+            const mp3 = await this.toMp3(blob);
+            file = name + '.mp3';
+            zip.file(file, new Blob([this.id3(it.title || name, artist, album), mp3]), { binary: true, compression: 'STORE' });
+          }
+          m3u.push(`#EXTINF:-1,${artist ? artist + ' - ' : ''}${it.title}`, file);
+          tracks.push({ file, title: it.title, artists: who.artists, colors: who.colors });
         } catch (e) {
           if (e.name === 'AbortError') throw e;
           this.skipped.push(it.title);
@@ -98,12 +129,13 @@ const StarDL = {
       }
       if (m3u.length === 1) throw new Error('empty');
       zip.file('playlist.m3u8', m3u.join('\r\n') + '\r\n');
+      zip.file('stellive.json', JSON.stringify({ v: 1, made: new Date().toISOString(), tracks }, null, 1));
       this.paint({ step: 'zip' });
       const out = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
       const d = new Date();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(out);
-      a.download = `stellive-stars-${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.zip`;
+      a.download = `stellive-stars-${fmt === 'mp4' ? 'mp4-' : ''}${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.zip`;
       document.body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 60e3);
       this.done(tRaw('dl.done', { n: m3u.length / 2 | 0 }) + (this.skipped.length ? ' ' + tRaw('dl.skipped', { n: this.skipped.length }) : ''));
