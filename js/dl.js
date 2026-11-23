@@ -86,10 +86,10 @@ const StarDL = {
      크롬 · 크롬북: 고른 폴더에 한 곡씩 바로 쓴다 → 메모리를 한 곡만큼만 쓴다 (26곡 · 몇 GB 여도 안 멈춘다)
      폴더 저장이 안 되는 브라우저: 400MB 씩 나눠 zip 여러 개로 받는다 */
   PART: 400e6,
-  async sink(fmt) {
+  async sink(fmt, noFolder) {
     const d = new Date(), stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
     const base = `stellive-stars-${fmt === 'mp4' ? 'mp4-' : ''}${stamp}`;
-    if (window.showDirectoryPicker) {
+    if (window.showDirectoryPicker && !noFolder) {
       const root = await showDirectoryPicker({ id: 'stl-stars', mode: 'readwrite', startIn: 'music' });
       let dir, name = base, n = 1;
       for (;;) { // 같은 이름 폴더가 있으면 -2, -3 …
@@ -141,7 +141,13 @@ const StarDL = {
     let out;
     // 폴더 고르기 창은 버튼을 누른 바로 그때 열어야 한다 (다른 걸 기다리면 브라우저가 막는다)
     try { out = await this.sink(fmt); }
-    catch (e) { if (e.name !== 'AbortError') toast(tRaw('dl.fail'), true); return; }
+    catch (e) {
+      if (e.name === 'AbortError') return; // 창을 닫았다
+      // 학교 크롬북처럼 폴더 저장을 막아 둔 곳: zip 여러 개로 나눠 받는다
+      console.warn('[받기] 폴더 저장이 안 돼서 zip 으로 받는다:', e);
+      toast(tRaw('dl.noFolder'));
+      try { out = await this.sink(fmt, true); } catch { return toast(tRaw('dl.fail'), true); }
+    }
     this.busy = true;
     this.ctl = new AbortController();
     this.list = ok; this.i = 0; this.skipped = [];
