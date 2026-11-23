@@ -855,6 +855,7 @@ function starDlRow(music) {
   const { ok, no } = StarDL.split(music);
   if (!ok.length) return '';
   return `<div class="dl-row"><button type="button" class="btn sm" data-dlstars>${ICON.download} ${esc(t('dl.btn', { n: ok.length }))}</button>
+    <a class="btn sm" href="offline/">${esc(t('dl.offline'))}</a>
     <small>${esc(t('dl.note'))}${no.length ? ' ' + esc(t('dl.ytOnly', { n: no.length })) : ''}</small></div>`;
 }
 

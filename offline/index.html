@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>오프라인 플레이어 · STELLIVE ARCHIVE</title>
+<meta name="theme-color" content="#070820">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #070820; --fg: #f3f0ff; --dim: #b9b2e6; --mute: #8f88c4; --accent: #cfc6ff;
+  --panel: #11123a; --tile: #1f1f52; --line: rgba(207,198,255,.18); --btn: #cfc6ff; --btn-fg: #070820;
+  --sans: 'Noto Sans KR', system-ui, sans-serif; --bodoni: 'Bodoni Moda', Georgia, serif;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #fcfbff; --fg: #16143a; --dim: #46427a; --mute: #55518a; --accent: #5b4fd6;
+  --panel: #f4f2fb; --tile: #ebe8f6; --line: rgba(22,20,58,.12); --btn: #5e50cf; --btn-fg: #fff;
+} }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); }
+body { min-height: 100vh; padding: 0 16px 140px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.wrap { max-width: 760px; margin: 0 auto; }
+header { padding: 40px 0 20px; }
+header .big { font-family: var(--bodoni); font-size: clamp(34px, 7vw, 56px); letter-spacing: .02em; line-height: 1; display: block; }
+header .ko { font-size: 15px; font-weight: 700; margin-top: 8px; display: block; }
+header p { color: var(--dim); font-size: 13px; line-height: 1.7; margin: 10px 0 0; }
+.net { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mute); margin-top: 10px; }
+.net i { width: 8px; height: 8px; border-radius: 50%; background: #6ee7a8; }
+.net.off i { background: #f5a3a3; }
+.drop { border: 1.5px dashed var(--line); border-radius: 16px; padding: 26px 18px; text-align: center; background: var(--panel); margin: 8px 0 22px; transition: border-color .2s, background .2s; }
+.drop.over { border-color: var(--accent); background: var(--tile); }
+.drop b { display: block; font-size: 15px; margin-bottom: 6px; }
+.drop small { color: var(--mute); font-size: 12px; line-height: 1.6; display: block; }
+.btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+.btn { border: 1px solid var(--line); background: none; border-radius: 10px; padding: 9px 14px; font-size: 13px; font-weight: 600; }
+.btn.pri { background: var(--btn); color: var(--btn-fg); border-color: transparent; }
+.btn:disabled { opacity: .5; cursor: default; }
+.bar-h { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; flex-wrap: wrap; }
+.bar-h .t { font-weight: 700; font-size: 14px; margin-right: auto; }
+.bar-h .t small { color: var(--mute); font-weight: 400; margin-left: 6px; }
+ol { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+li { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 11px 6px; border-bottom: 1px solid var(--line); cursor: pointer; }
+li:hover { background: var(--panel); }
+li .n { color: var(--mute); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+li .tt { min-width: 0; }
+li .tt b { display: block; font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+li .tt span { display: block; color: var(--mute); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+li .d { color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; }
+li.now { background: var(--tile); }
+li.now .n { color: var(--accent); }
+li.now b { color: var(--accent); font-weight: 700; }
+.empty { color: var(--mute); text-align: center; font-size: 13px; padding: 30px 0; }
+.player { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+.player .in { max-width: 760px; margin: 0 auto; display: grid; gap: 8px; }
+.now-t { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now-t small { color: var(--mute); font-weight: 400; margin-left: 8px; }
+.ctl { display: flex; align-items: center; gap: 6px; }
+.ic { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: none; display: grid; place-items: center; padding: 0; }
+.ic svg { width: 17px; height: 17px; }
+.ic.big { width: 46px; height: 46px; background: var(--btn); color: var(--btn-fg); border: 0; }
+.ic.on { border-color: var(--accent); color: var(--accent); }
+.ic[data-one="1"]::after { content: '1'; position: absolute; font-size: 9px; font-weight: 700; transform: translate(9px, -9px); }
+.seek { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--mute); font-variant-numeric: tabular-nums; min-width: 0; }
+.seek input { flex: 1; accent-color: var(--accent); min-width: 0; }
+.toast { position: fixed; left: 50%; bottom: 130px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s; max-width: calc(100vw - 32px); text-align: center; }
+.toast.show { opacity: 1; }
+.back { color: var(--mute); font-size: 12px; text-decoration: none; }
+@media (max-width: 520px) { .ctl .hide-s { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../#/stars">← 사이트로 돌아가기</a>
+    <span class="big" style="margin-top:14px">Offline</span>
+    <span class="ko">와이파이 없이 듣기</span>
+    <p>별표에서 받은 zip을 한 번만 넣어 두면, 그다음부터는 인터넷이 없어도 이 페이지에서 그대로 들을 수 있어요.<br>
+       넣은 노래는 이 브라우저에만 저장돼요. 다른 곳으로는 보내지 않아요.</p>
+    <span class="net" id="net"><i></i><span></span></span>
+  </header>
+
+  <div class="drop" id="drop">
+    <b>zip 파일이나 mp3 · playlist.m3u8을 여기에 끌어다 놓기</b>
+    <small>별표에서 받은 <code>stellive-stars-날짜.zip</code>을 그대로 넣으면 돼요. 압축을 푼 mp3들과 playlist.m3u8을 같이 골라도 돼요.<br>
+      새로 넣으면 지금 목록이 새 목록으로 바뀌어요.</small>
+    <div class="btns">
+      <button class="btn pri" id="pick">파일 고르기</button>
+      <button class="btn" id="pickDir">폴더 고르기</button>
+    </div>
+    <input type="file" id="fileIn" accept=".zip,.mp3,.m3u8,.m3u,audio/*" multiple hidden>
+    <input type="file" id="dirIn" webkitdirectory hidden>
+  </div>
+
+  <div class="bar-h">
+    <span class="t" id="listT">목록</span>
+    <button class="btn" id="install" hidden>앱으로 설치</button>
+    <button class="btn" id="clear">비우기</button>
+  </div>
+  <ol id="list"></ol>
+</div>
+
+<div class="player" id="player" hidden>
+  <div class="in">
+    <div class="now-t" id="nowT"></div>
+    <div class="ctl">
+      <button class="ic hide-s" id="shuf" title="랜덤 (한 바퀴 돌 때까지 안 겹쳐요)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button>
+      <button class="ic" id="prev" title="이전"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button class="ic big" id="play" title="재생"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg></button>
+      <button class="ic" id="next" title="다음"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      <button class="ic hide-s" id="rep" title="반복"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></svg></button>
+      <div class="seek"><span id="cur">0:00</span><input type="range" id="seek" min="0" max="1000" value="0"><span id="dur">0:00</span></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<audio id="au" preload="auto"></audio>
+
+<script src="jszip.min.js"></script>
+<script>
+/* 오프라인 플레이어
+   넣은 노래는 Cache Storage(stl-offline-tracks)에 파일로, 목록은 localStorage(stlOffList)에 저장한다.
+   페이지 자체는 sw.js 가 저장해 두어서 인터넷이 없어도 열린다 */
+const $ = id => document.getElementById(id);
+const TRACKS = 'stl-offline-tracks';
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>',
+};
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '0:00';
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
+
+// 인터넷 상태 표시
+function paintNet() { const n = $('net'), on = navigator.onLine; n.classList.toggle('off', !on); n.lastElementChild.textContent = on ? '인터넷 연결됨 · 이 페이지가 저장돼서 끊겨도 열려요' : '인터넷 없음 · 저장된 노래로 듣는 중'; }
+addEventListener('online', paintNet); addEventListener('offline', paintNet); paintNet();
+
+// 페이지를 인터넷 없이도 열리게 저장
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// 브라우저가 공간이 모자랄 때 멋대로 지우지 않게 부탁
+navigator.storage?.persist?.().catch(() => {});
+
+/* ── 넣기 ── */
+const S = { list: store.get('stlOffList', []), idx: store.get('stlOffIdx', -1), shuffle: store.get('stlOffShuf', false), repeat: store.get('stlOffRep', 'all'), played: new Set(), hist: [], url: '' };
+
+function parseM3u(text) {
+  const out = []; let info = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#EXTINF')) { info = line.replace(/^#EXTINF:[^,]*,/, ''); continue; }
+    if (line.startsWith('#')) continue;
+    out.push({ file: decodeURIComponent(line.split(/[\\/]/).pop()), info }); info = null;
+  }
+  return out;
+}
+const baseName = p => p.split(/[\\/]/).pop();
+const isAudio = n => /\.(mp3|m4a|aac|ogg|opus|wav|flac|mp4)$/i.test(n);
+const mimeOf = n => ({ mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac', mp4: 'video/mp4' }[n.split('.').pop().toLowerCase()] || 'audio/mpeg');
+
+// files: [{ name, blob }]  (zip 은 먼저 풀어서 넘긴다)
+async function expand(fileList) {
+  const out = [];
+  for (const f of fileList) {
+    if (/\.zip$/i.test(f.name)) {
+      const zip = await JSZip.loadAsync(f);
+      const entries = Object.values(zip.files).filter(z => !z.dir && (isAudio(z.name) || /\.m3u8?$/i.test(z.name)));
+      for (const z of entries) out.push({ name: baseName(z.name), blob: new Blob([await z.async('arraybuffer')], { type: mimeOf(z.name) }) });
+    } else out.push({ name: baseName(f.webkitRelativePath || f.name), blob: f });
+  }
+  return out;
+}
+
+async function importFiles(fileList) {
+  if (!fileList.length) return;
+  if (S.list.length && !confirm('지금 목록을 새로 넣는 노래로 바꿀까요?')) return;
+  toast('노래를 넣는 중이에요…');
+  try {
+    const files = await expand([...fileList]);
+    const songs = files.filter(f => isAudio(f.name));
+    if (!songs.length) return toast('넣을 노래 파일이 없어요');
+    const m3u = files.find(f => /\.m3u8?$/i.test(f.name));
+    let order = [];
+    if (m3u) {
+      const byName = new Map(songs.map(s => [s.name, s]));
+      const entries = parseM3u(await m3u.blob.text());
+      for (const e of entries) { const s = byName.get(e.file); if (s) { order.push({ ...s, info: e.info }); byName.delete(e.file); } }
+      order.push(...byName.values()); // 목록에 없는 파일은 뒤에
+    } else order = songs.sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }));
+    stop();
+    await caches.delete(TRACKS);
+    const c = await caches.open(TRACKS);
+    const list = [];
+    for (let i = 0; i < order.length; i++) {
+      const s = order[i], key = `/__track/${i}`;
+      await c.put(key, new Response(s.blob, { headers: { 'content-type': s.blob.type || mimeOf(s.name) } }));
+      const [artist, title] = splitInfo(s.info, s.name);
+      list.push({ key, title, artist, size: s.blob.size });
+    }
+    S.list = list; S.idx = -1; S.played = new Set(); S.hist = [];
+    store.set('stlOffList', list); store.set('stlOffIdx', -1);
+    paint();
+    toast(`${list.length}곡을 넣었어요. 이제 인터넷 없이도 들을 수 있어요`);
+  } catch (e) {
+    console.error(e);
+    toast(/quota/i.test(e.name + e.message) ? '저장 공간이 모자라요. 곡 수를 줄여서 다시 넣어 주세요' : '넣지 못했어요. 파일을 확인해 주세요');
+  }
+}
+function splitInfo(info, file) {
+  const fromFile = file.replace(/\.[^.]+$/, '').replace(/^\d+\s+/, '');
+  if (!info) return ['', fromFile];
+  const i = info.indexOf(' - ');
+  return i > 0 ? [info.slice(0, i), info.slice(i + 3)] : ['', info];
+}
+
+$('pick').onclick = () => $('fileIn').click();
+$('pickDir').onclick = () => $('dirIn').click();
+$('fileIn').onchange = e => { importFiles(e.target.files); e.target.value = ''; };
+$('dirIn').onchange = e => { importFiles(e.target.files); e.target.value = ''; };
+const drop = $('drop');
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => importFiles(e.dataTransfer.files));
+$('clear').onclick = async () => {
+  if (!S.list.length || !confirm('저장한 노래를 전부 지울까요?')) return;
+  stop(); await caches.delete(TRACKS);
+  S.list = []; S.idx = -1; store.set('stlOffList', []); paint();
+};
+
+// 앱으로 설치 (크롬북 · 안드로이드 크롬에서 앱 목록에 넣을 수 있다)
+let installEvt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('install').hidden = false; });
+$('install').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('install').hidden = true; };
+
+/* ── 재생 ── */
+const au = $('au');
+async function go(i, autoplay = true) {
+  if (!S.list.length) return;
+  S.idx = (i + S.list.length) % S.list.length;
+  store.set('stlOffIdx', S.idx);
+  S.played.add(S.idx);
+  const t = S.list[S.idx];
+  const r = await (await caches.open(TRACKS)).match(t.key);
+  if (!r) return toast('저장된 파일을 못 찾았어요. 다시 넣어 주세요');
+  if (S.url) URL.revokeObjectURL(S.url);
+  S.url = URL.createObjectURL(await r.blob());
+  au.src = S.url;
+  if (autoplay) au.play().catch(() => {});
+  paint();
+  if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: 'STELLIVE' });
+}
+function stop() { au.pause(); au.removeAttribute('src'); au.load(); if (S.url) URL.revokeObjectURL(S.url); S.url = ''; }
+function left() { return S.list.map((_, i) => i).filter(i => i !== S.idx && !S.played.has(i)); }
+function next(auto) {
+  if (!S.list.length) return;
+  if (auto && S.repeat === 'one') return go(S.idx);
+  if (S.shuffle && S.list.length > 1) {
+    let pool = left();
+    if (!pool.length) { if (auto && S.repeat === 'off') return; S.played = new Set([S.idx]); pool = left(); }
+    S.hist.push(S.idx);
+    return go(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  if (auto && S.repeat === 'off' && S.idx === S.list.length - 1) return;
+  go(S.idx + 1);
+}
+function prev() {
+  if (au.currentTime > 4) { au.currentTime = 0; return; }
+  if (S.shuffle && S.hist.length) return go(S.hist.pop());
+  go(S.idx - 1);
+}
+au.addEventListener('ended', () => next(true));
+au.addEventListener('play', paintCtl); au.addEventListener('pause', paintCtl);
+au.addEventListener('timeupdate', () => {
+  $('cur').textContent = fmt(au.currentTime); $('dur').textContent = fmt(au.duration);
+  if (document.activeElement !== $('seek')) $('seek').value = au.duration ? Math.round(au.currentTime / au.duration * 1000) : 0;
+});
+$('seek').oninput = e => { if (au.duration) au.currentTime = e.target.value / 1000 * au.duration; };
+$('play').onclick = () => { if (S.idx < 0) return S.shuffle ? next() : go(0); au.paused ? au.play() : au.pause(); };
+$('next').onclick = () => next(); $('prev').onclick = prev;
+$('shuf').onclick = () => { S.shuffle = !S.shuffle; S.played = new Set(S.idx >= 0 ? [S.idx] : []); store.set('stlOffShuf', S.shuffle); paintCtl(); };
+$('rep').onclick = () => { S.repeat = { all: 'one', one: 'off', off: 'all' }[S.repeat]; store.set('stlOffRep', S.repeat); paintCtl(); };
+$('list').onclick = e => { const li = e.target.closest('li[data-i]'); if (li) go(+li.dataset.i); };
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.setActionHandler('play', () => au.play());
+  navigator.mediaSession.setActionHandler('pause', () => au.pause());
+  navigator.mediaSession.setActionHandler('nexttrack', () => next());
+  navigator.mediaSession.setActionHandler('previoustrack', prev);
+}
+addEventListener('keydown', e => {
+  if (e.target.closest('input') && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
+});
+
+/* ── 그리기 ── */
+function paintCtl() {
+  $('play').innerHTML = au.paused ? ICON.play : ICON.pause;
+  $('shuf').classList.toggle('on', S.shuffle);
+  $('rep').classList.toggle('on', S.repeat !== 'off');
+  $('rep').dataset.one = S.repeat === 'one' ? '1' : '';
+  $('rep').title = { all: '전체 반복', one: '한 곡 반복', off: '반복 안 함' }[S.repeat];
+}
+function paint() {
+  const mb = S.list.reduce((a, t) => a + (t.size || 0), 0) / 1048576;
+  $('listT').innerHTML = `목록 <small>${S.list.length}곡${S.list.length ? ` · ${mb.toFixed(0)}MB` : ''}</small>`;
+  $('list').innerHTML = S.list.length ? S.list.map((t, i) => `<li data-i="${i}" class="${i === S.idx ? 'now' : ''}">
+      <span class="n">${i === S.idx ? '▶' : i + 1}</span>
+      <span class="tt"><b>${esc(t.title)}</b>${t.artist ? `<span>${esc(t.artist)}</span>` : ''}</span><span class="d"></span></li>`).join('')
+    : '<div class="empty">아직 넣은 노래가 없어요. 위에서 zip을 넣어 주세요.</div>';
+  $('player').hidden = !S.list.length;
+  const t = S.list[S.idx];
+  $('nowT').innerHTML = t ? `${esc(t.title)}${t.artist ? `<small>${esc(t.artist)}</small>` : ''}` : '재생할 곡을 골라 주세요';
+  paintCtl();
+}
+paint();
+if (S.idx >= 0 && S.idx < S.list.length) go(S.idx, false);
+</script>
+</body>
+</html>

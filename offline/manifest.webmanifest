@@ -1,0 +1,10 @@
+{
+  "name": "STELLIVE 오프라인 플레이어",
+  "short_name": "STL 오프라인",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#070820",
+  "theme_color": "#070820",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
