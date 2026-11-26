@@ -386,6 +386,8 @@ function renderHome() {
 
     <section id="cal">${calendarHtml()}</section>
 
+    ${EDIT ? '' : memberDeck()}
+
     ${s.groups.map(g => {
       const ms = active().filter(m => m.group === g.id);
       if (!ms.length) return '';
@@ -401,7 +403,130 @@ function renderHome() {
     </section>` : ''}
 
     ${footerHtml()}`;
+  if (!EDIT) Deck.init();
 }
+
+/* ─── 휴대폰 · 패드: 멤버를 옆으로 넘겨 보는 카드 ───
+   손가락으로 넘기면 한 명씩 딱 멈춘다. 위의 기수 버튼으로 그 기수 첫 멤버로 바로 간다.
+   크롬북 · PC(마우스)에서는 원래 기수별 카드 목록이 그대로 나온다 (CSS 가 둘 중 하나만 보여 준다) */
+function memberDeck() {
+  const s = Data.site;
+  const list = [...active(), ...graduates()];
+  if (!list.length) return '';
+  const genOf = m => m.graduated ? null : s.groups.find(g => g.id === m.group);
+  const chips = [...s.groups.filter(g => active().some(m => m.group === g.id)).map(g => ({ id: g.id, label: g.label, color: g.color })),
+    ...(graduates().length ? [{ id: '_grad', label: t('home.graduationKo'), color: '#cfc6ff' }] : [])];
+  return `<section class="deck-sec" aria-label="${esc(t('deck.title'))}">
+    <div class="deck-h">
+      <div><span class="sc">${esc(t('deck.kicker'))}</span><b class="ko">${esc(t('deck.title'))}</b></div>
+      <span class="deck-n" aria-live="polite"><b>01</b> / ${pad2(list.length)}</span>
+    </div>
+    <div class="deck-chips">${chips.map(c => `<button type="button" data-deck-g="${esc(c.id)}" style="--g:${esc(c.color || '#fff')}">${esc(c.label)}</button>`).join('')}</div>
+    <div class="deck" id="deck">
+      ${list.map((m, i) => {
+        const g = genOf(m), img = layersOf(m.avatar).layers.length;
+        return `<div class="dk-w" data-i="${i}" data-g="${esc(m.graduated ? '_grad' : m.group)}" style="--c:${esc(m.color)}">
+          <a class="dk ${img ? 'has-img' : ''} ${m.graduated ? 'grad' : ''}" href="#/m/${esc(m.id)}" aria-label="${esc(m.name)} 프로필">
+            ${img ? layersHtml(m.avatar, { oy: 0 }) : `<span class="mc-ini">${esc(m.name.slice(0, 1))}</span>`}
+            <span class="dk-en">${esc((m.en || '').toUpperCase())}</span>
+            <span class="dk-cap"><small>${m.graduated ? esc(t('home.graduationKo')) : g ? `${genNo(g)} · ${esc(g.name)}` : ''}</small><b>${esc(m.name)}</b><i>${esc(m.en || '')}</i></span>
+          </a>
+          ${m.graduated ? '' : `<div class="mc-links">${linkBtns(m)}</div>`}
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="deck-ctl">
+      <button type="button" class="icon-btn" data-deck-step="-1" aria-label="${esc(t('deck.prev'))}">${ICON.chevL}</button>
+      <div class="deck-bar"><i></i></div>
+      <button type="button" class="icon-btn" data-deck-step="1" aria-label="${esc(t('deck.next'))}">${ICON.chevR}</button>
+    </div>
+  </section>`;
+}
+const Deck = {
+  i: 0,
+  init() {
+    const el = $('#deck');
+    if (!el) return;
+    this.el = el;
+    this.cards = $$('.dk-w', el);
+    // 멤버 페이지에 갔다가 돌아오면 보던 멤버 그대로
+    const saved = +sessionStorage.getItem('stl.deck') || 0;
+    requestAnimationFrame(() => { this.go(saved, true); this.paint(); });
+    let raf = 0;
+    el.addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => this.paint()); }, { passive: true });
+  },
+  // 가운데에 제일 가까운 카드
+  current() {
+    const mid = this.el.scrollLeft + this.el.clientWidth / 2;
+    let best = 0, bd = Infinity;
+    this.cards.forEach((c, i) => { const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid); if (d < bd) { bd = d; best = i; } });
+    return best;
+  },
+  go(i, instant) {
+    if (!this.cards?.length) return;
+    i = Math.max(0, Math.min(this.cards.length - 1, i));
+    const c = this.cards[i];
+    this.el.scrollTo({ left: c.offsetLeft - (this.el.clientWidth - c.offsetWidth) / 2, behavior: instant ? 'auto' : 'smooth' });
+  },
+  paint() {
+    if (!this.el?.isConnected || !this.el.clientWidth) return;
+    const i = this.current(), n = this.cards.length;
+    this.i = i;
+    try { sessionStorage.setItem('stl.deck', i); } catch {}
+    this.cards.forEach((c, k) => c.classList.toggle('on', k === i));
+    const sec = this.el.closest('.deck-sec');
+    $('.deck-n b', sec).textContent = pad2(i + 1);
+    $('.deck-bar i', sec).style.cssText = `width:${100 / n}%;transform:translateX(${i * 100}%)`;
+    const g = this.cards[i].dataset.g;
+    $$('[data-deck-g]', sec).forEach(b => b.classList.toggle('on', b.dataset.deckG === g));
+    sec.style.setProperty('--now', this.cards[i].style.getPropertyValue('--c'));
+  },
+};
+document.addEventListener('click', e => {
+  const g = e.target.closest('[data-deck-g]');
+  if (g && Deck.cards) { const i = Deck.cards.findIndex(c => c.dataset.g === g.dataset.deckG); if (i >= 0) Deck.go(i); return; }
+  const st = e.target.closest('[data-deck-step]');
+  if (st && Deck.cards) Deck.go(Deck.i + +st.dataset.deckStep);
+});
+
+/* ─── 멤버 페이지: 옆으로 밀어서 다음 · 이전 멤버 ─── */
+const Swipe = {
+  dir: 0, // 다음 화면이 들어올 쪽 (1: 오른쪽에서, -1: 왼쪽에서)
+  bind(card, prevId, nextId) {
+    if (!card || !matchMedia('(max-width: 820px), (hover: none)').matches || EDIT) return;
+    let x0 = 0, y0 = 0, dx = 0, on = false, locked = null;
+    card.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1 || e.target.closest('.mini, .pf-links, input, textarea')) return;
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; on = true; locked = null;
+      card.style.transition = 'none';
+    }, { passive: true });
+    card.addEventListener('touchmove', e => {
+      if (!on) return;
+      const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+      if (locked == null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) locked = Math.abs(mx) > Math.abs(my) ? 'x' : 'y';
+      if (locked !== 'x') return;
+      dx = mx;
+      card.style.transform = `translateX(${dx * 0.6}px) rotate(${dx * 0.01}deg)`;
+      card.style.opacity = String(1 - Math.min(Math.abs(dx) / 900, 0.35));
+    }, { passive: true });
+    const end = () => {
+      if (!on) return;
+      on = false;
+      card.style.transition = '';
+      if (locked === 'x' && Math.abs(dx) > 70) {
+        const go = dx < 0 ? 1 : -1;
+        this.dir = go;
+        card.style.transform = `translateX(${go * -110}%)`;
+        card.style.opacity = '0';
+        setTimeout(() => { location.hash = '#/m/' + (go > 0 ? nextId : prevId); }, 160);
+      } else { card.style.transform = ''; card.style.opacity = ''; }
+    };
+    card.addEventListener('touchend', end);
+    card.addEventListener('touchcancel', end);
+    // 처음 한 번만 넘기는 법 알려 주기
+    if (!store.get('swipeHint')) { store.set('swipeHint', 1); setTimeout(() => toast(tRaw('deck.swipeHint')), 700); }
+  },
+};
 
 function memberCard(m, grad) {
   const img = layersOf(m.avatar).layers.length;
@@ -691,12 +816,14 @@ function renderMember(id, tab) {
 
   view.innerHTML = `
     <nav class="pf-nav">
-      <a href="#/">${ICON.chevL} ${esc(t('profile.back'))}</a>
+      <a href="#/" class="pf-home">${ICON.chevL} ${esc(t('profile.back'))}</a>
+      <a href="#/m/${esc(prev.id)}" class="pf-prev">${ICON.chevL} ${esc(prev.name)}</a>
       <span>${m.graduated ? esc(t('profile.navGrad')) : g ? `${genNo(g)} · ${esc(g.name.toUpperCase())} — ${sameGen.indexOf(m) + 1} / ${sameGen.length}` : ''}</span>
-      <a href="#/m/${esc(next.id)}" title="${esc(prev.name)} ← → ${esc(next.name)}">${esc((next.en || next.name).toUpperCase())} ${ICON.chevR}</a>
+      <a href="#/m/${esc(next.id)}" class="pf-next" title="${esc(prev.name)} ← → ${esc(next.name)}"><span class="en">${esc((next.en || next.name).toUpperCase())}</span><span class="ko">${esc(next.name)}</span> ${ICON.chevR}</a>
     </nav>
+    <div class="pf-row" aria-label="${esc(t('deck.title'))}">${order.map(x => `<a href="#/m/${esc(x.id)}" class="${x === m ? 'on' : ''}" style="--c:${esc(x.color)}" aria-label="${esc(x.name)}">${avatarHtml(x, 'av')}<small>${esc(x.name)}</small></a>`).join('')}</div>
 
-    <article class="pf-card" style="--c:${esc(m.color)}">
+    <article class="pf-card ${Swipe.dir > 0 ? 'in-r' : Swipe.dir < 0 ? 'in-l' : ''}" style="--c:${esc(m.color)}">
       <div class="pf-left">
         <div class="pf-strip" aria-hidden="true"><span>${esc(family)}</span></div>
         <div class="pf-art" data-ei="${mp}.art" ${firstSrc(m.artBg) || siteImg('profileBg') ? `style="background:url('${esc(imgUrl(firstSrc(m.artBg), 1600) || siteImg('profileBg'))}') center / cover"` : ''}>
@@ -737,6 +864,10 @@ function renderMember(id, tab) {
       <div class="list-tools"><button type="button" class="btn sm line" data-upload='${esc(JSON.stringify({ kind: tab, members: [m.id] }))}'>${esc(t('list.add', { kind: KIND[tab].name }))}</button></div>
       <div style="margin-top:72px">${itemsBlock(tab, items, `${m.name} ${KIND[tab].name}`, { members: [m.id] })}</div>
     </div>`;
+  Swipe.dir = 0;
+  Swipe.bind($('.pf-card'), prev.id, next.id);
+  const row = $('.pf-row'), on = $('.pf-row .on');
+  if (row && on) row.scrollLeft = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
 }
 
 /* ─── 단체 · 합방 ─── */
@@ -792,12 +923,14 @@ function renderListen() {
     <div class="chips">
       ${KINDS.filter(k => k.music).map(k => `<button type="button" class="chip ${state.listenKinds.has(k.id) ? 'on' : ''}" data-lk="${k.id}" aria-pressed="${state.listenKinds.has(k.id)}">${k.name}</button>`).join('')}
       <span class="grow"></span>
+      <details class="ls-set" ${!TOUCH() || state.lsOpen ? 'open' : ''}><summary>${esc(t('listen.settings'))}</summary><div class="ls-in">
       <span class="chip-k">${esc(t('listen.preferNote'))}</span>
       <button type="button" class="chip ${Player.prefer === 'drive' ? 'on' : ''}" data-prefer aria-pressed="${Player.prefer === 'drive'}">${esc(t('listen.prefer'))}</button>
       <button type="button" class="chip ${Player.full ? 'on' : ''}" data-fulldl aria-pressed="${Player.full}" title="${esc(tRaw('listen.fullTitle'))}">${esc(t('listen.full'))}</button>
       <button type="button" class="chip ${Loud.on ? 'on' : ''}" data-normvol aria-pressed="${Loud.on}" title="${esc(tRaw('listen.normTitle'))}">${esc(t('listen.norm'))}</button>
       <span class="chip-k">${esc(t('listen.coverNote'))}</span>
       ${['fanart', 'profile'].map(v => `<button type="button" class="chip ${store.get('audioCover', 'fanart') === v ? 'on' : ''}" data-cover="${v}" aria-pressed="${store.get('audioCover', 'fanart') === v}">${esc(t(v === 'fanart' ? 'listen.coverFanart' : 'listen.coverProfile'))}</button>`).join('')}
+      </div></details>
     </div>
     <div class="modes">
       <button type="button" class="mode" data-mode="random"><span class="bd">01</span><span class="ko">${esc(t('listen.random'))}</span><small>${esc(t('list.count', { n: music.length }))}</small></button>
@@ -971,7 +1104,7 @@ function paintSchedule() {
   isoDays.forEach((iso, i) => {
     const ev = byDay[iso].sort(schSort);
     cells += `<div class="sch-cd ${iso === today ? 'today' : ''} ${Sched.pick === iso ? 'pick' : ''}" data-schday="${iso}">
-      <span class="n">${+iso.slice(8)}</span>
+      <span class="n">${+iso.slice(8)}${week ? `<small class="sch-wd">${esc(dows[new Date(iso + 'T12:00').getDay()] || '')}</small>` : ''}</span>
       ${ev.slice(0, MAX).map(e => schItem(e)).join('')}
       ${ev.length > MAX ? `<span class="sch-more">+${ev.length - MAX}</span>` : ''}
       ${week && !ev.length ? `<span class="sch-empty">—</span>` : ''}
@@ -1203,6 +1336,11 @@ const NAV = [
   ['#/', 'nav.home', 'nav.homeEn'], ['#/calendar', 'nav.calendar', 'nav.calendarEn'], ['#/schedule', 'nav.schedule', 'nav.scheduleEn'], ['#/listen', 'nav.listen', 'nav.listenEn'], ['#/shorts', 'nav.shorts', 'nav.shortsEn'],
   ['#/group', 'nav.group', 'nav.groupEn'], ['#/stars', 'nav.stars', 'nav.starsEn'], ['#/about', 'nav.about', 'nav.aboutEn'],
 ];
+// 휴대폰 아래 탭 (자주 가는 곳만 — 나머지는 왼쪽 위 목차)
+const TABS = [['#/', 'home', 'nav.home'], ['#/listen', 'music', 'nav.tabListen'], ['#/shorts', 'video', 'nav.tabShorts'], ['#/schedule', 'calendar', 'nav.tabSchedule'], ['#/stars', 'star', 'nav.stars']];
+// 휴대폰 · 패드(손가락으로 쓰는 화면)인지
+const TOUCH = () => matchMedia('(max-width: 820px), (hover: none)').matches;
+document.addEventListener('toggle', e => { if (e.target.classList?.contains('ls-set')) state.lsOpen = e.target.open; }, true);
 function renderDrawer() {
   const block = (no, name, ms, color) => ms.length ? `<div class="dr-g" style="--g:${esc(color || '#fff')}">
     <div class="dr-gh"><b>${no}</b><i>${esc(name)}</i></div>
@@ -1227,6 +1365,7 @@ function renderDrawer() {
     </div>`;
   const dl = layersHtml(Data.site.images?.drawer);
   if (dl) $('#drawer').insertAdjacentHTML('afterbegin', dl + '<div class="scrim" aria-hidden="true"></div>');
+  $('#tabbar').innerHTML = TABS.map(([href, ico, ko]) => `<a href="${href}" data-href="${href}">${ICON[ico]}<span>${esc(t(ko))}</span></a>`).join('');
   $('#tbLinks').innerHTML = NAV.map(([href, , en]) => `<a href="${href}" data-href="${href}">${esc(t(en))}</a>`).join('');
   paintLogin(Auth.user);
   markNav();
